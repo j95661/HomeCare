@@ -53,7 +53,7 @@ beforeEach(async () => {
     };
     await setDoc(doc(db, "settings/app"), {
       passwordMaxAgeDays: 183,
-      timezone: "America/New_York",
+      timezone: "America/Los_Angeles",
       snoozeMinutes: 10,
       superAdminEmail: "super@example.com",
       superAdminUid: "super",

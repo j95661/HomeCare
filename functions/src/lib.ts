@@ -3,6 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+import { DEFAULT_TIMEZONE } from "./logic/password";
 import { isRole, type Role } from "./logic/roles";
 
 if (getApps().length === 0) initializeApp();
@@ -43,7 +44,7 @@ export async function readSettings(store: Firestore = db): Promise<AppSettings> 
   const data = snap.data() ?? {};
   return {
     passwordMaxAgeDays: Number(data.passwordMaxAgeDays),
-    timezone: String(data.timezone || "America/New_York"),
+    timezone: String(data.timezone || DEFAULT_TIMEZONE),
     snoozeMinutes: Number(data.snoozeMinutes || 10),
     superAdminEmail: String(data.superAdminEmail || ""),
     superAdminUid: String(data.superAdminUid || ""),

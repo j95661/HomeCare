@@ -98,7 +98,7 @@ const superUid = await ensureUser({
 
 const settingsRef = db.doc("settings/app");
 const settings = await settingsRef.get();
-const timezone = settings.exists && settings.get("timezone") ? settings.get("timezone") : "America/New_York";
+const timezone = settings.exists && settings.get("timezone") ? settings.get("timezone") : "America/Los_Angeles";
 await settingsRef.set(
   {
     passwordMaxAgeDays: settings.exists && settings.get("passwordMaxAgeDays") ? settings.get("passwordMaxAgeDays") : MAX_DAYS,

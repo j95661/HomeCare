@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertTimezone, DEFAULT_PASSWORD_MAX_AGE_DAYS, expiresAt, isPasswordExpired, validatePassword } from "../functions/src/logic/password";
+import { assertTimezone, DEFAULT_PASSWORD_MAX_AGE_DAYS, DEFAULT_TIMEZONE, expiresAt, isPasswordExpired, validatePassword } from "../functions/src/logic/password";
 
 describe("password policy", () => {
   it("requires 8 to 200 characters with a letter and a number", () => {
@@ -30,7 +30,8 @@ describe("password policy", () => {
   });
 
   it("accepts an IANA timezone and rejects a blank or unknown zone", () => {
-    expect(() => assertTimezone("America/New_York")).not.toThrow();
+    expect(DEFAULT_TIMEZONE).toBe("America/Los_Angeles");
+    expect(() => assertTimezone(DEFAULT_TIMEZONE)).not.toThrow();
     expect(() => assertTimezone("")).toThrow(/timezone/);
     expect(() => assertTimezone("Not/AZone")).toThrow();
     expect(() => assertTimezone("A".repeat(81))).toThrow(/timezone/);

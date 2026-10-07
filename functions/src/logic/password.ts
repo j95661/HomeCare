@@ -1,6 +1,7 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_PASSWORD_MAX_AGE_DAYS = 183;
+export const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
 export function validatePassword(password: string): string | null {
   if (password.length < 8) return "Use at least 8 characters.";
