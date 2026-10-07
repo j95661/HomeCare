@@ -86,4 +86,4 @@ The public Firebase config is not a secret. Security rules are the access contro
 npm test
 ```
 
-Logic tests cover roles, revocation order, OTP, the password window, on-shift medication fan-out, off-shift message delivery, and the Home Screen push gate. Rules tests run against the Firestore emulator and check that inactive, unverified, and expired accounts fail closed.
+`npm test` runs the logic suites, then the Firestore emulator rules suites. Logic covers roles, revocation order, OTP, the password window, on-shift medication fan-out, snooze grace, off-shift message delivery, shift acceptance, calendar dates, and the Home Screen push gate. Rules suites check that inactive, unverified, and expired accounts fail closed, and that clients cannot write logs, snoozes, devices, OTP challenges, or someone else's thread.
