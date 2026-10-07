@@ -13,6 +13,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -296,6 +297,16 @@ describe("security rules", () => {
     );
     await assertFails(getDoc(doc(dbFor("lead"), "threads/direct_pat_sam")));
     await assertSucceeds(getDoc(doc(dbFor("sam"), "threads/direct_pat_sam")));
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(dbFor("pat"), "threads"),
+          where("type", "==", "direct"),
+          where("participantIds", "array-contains", "pat"),
+          orderBy("lastMessageAt", "desc"),
+        ),
+      ),
+    );
   });
 
   it("flips access off as soon as the profile is marked inactive", async () => {

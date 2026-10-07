@@ -55,7 +55,12 @@ export function MessagesScreen({ thread, go }: Props) {
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
-        query(collection(db, "threads"), where("participantIds", "array-contains", session.uid), orderBy("lastMessageAt", "desc")),
+        query(
+          collection(db, "threads"),
+          where("type", "==", "direct"),
+          where("participantIds", "array-contains", session.uid),
+          orderBy("lastMessageAt", "desc"),
+        ),
         (snap) =>
           setDirects(
             snap.docs.map((item) => ({

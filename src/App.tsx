@@ -150,7 +150,30 @@ export function App() {
 
   const onDenied = useCallback(() => {
     const user = auth.currentUser;
-    if (user) void loadRef.current(user);
+    if (!user) return;
+    void (async () => {
+      try {
+        const state = await call<SessionPayload>("getSessionState");
+        if (!state.active) {
+          await signOut(auth);
+          setGate({ kind: "signedOut", notice: "This account has been revoked." });
+          return;
+        }
+        if (!state.otpVerified) {
+          setGate({ kind: "otp", email: state.email || user.email || "" });
+          return;
+        }
+        if (state.passwordChangeRequired) {
+          setGate({
+            kind: "password",
+            email: state.email || user.email || "",
+            days: state.passwordMaxAgeDays,
+          });
+        }
+      } catch (error) {
+        setGate({ kind: "error", message: errorText(error) });
+      }
+    })();
   }, []);
 
   const sessionValue: SessionValue | null = useMemo(() => {

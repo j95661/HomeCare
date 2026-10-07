@@ -583,7 +583,11 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
         type="button"
         data-testid="enable-push"
         onClick={() => {
-          void enablePush().catch((err) => setError(errorText(err)));
+          void enablePush().catch((err) => {
+            const message = errorText(err);
+            if (block && message === block) return;
+            setError(message);
+          });
         }}
       >
         Enable notifications
