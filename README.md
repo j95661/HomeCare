@@ -30,7 +30,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 6. One group thread and one-to-one threads.
 7. Admin-managed how-to guides.
 
-When the super admin adds a person, they choose Gmail or Email code. Gmail writes an invite and creates the account the first time that Gmail address signs in. Email code creates the account with no password; each sign-in sends a 6-digit code. Password changes stay on a schedule for password accounts only, including the super admin. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings also holds the color scheme: Forest, Night, Ocean, or Clay. Everyone sees the saved scheme. A password account still confirms the email with a 6-digit code on first sign-in.
+Each person can set an emoji on More. Teammates see it next to that person's name. When the super admin adds a person, they choose Gmail or Email code. Gmail writes an invite and creates the account the first time that Gmail address signs in. Email code creates the account with no password; each sign-in sends a 6-digit code. Password changes stay on a schedule for password accounts only, including the super admin. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings also holds the color scheme: Forest, Night, Ocean, or Clay. Everyone sees the saved scheme. A password account still confirms the email with a 6-digit code on first sign-in.
 
 ## Install on a phone
 

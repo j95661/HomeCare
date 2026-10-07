@@ -19,6 +19,7 @@ export type UserRecordData = {
   displayName: string;
   role: Role;
   signIn: SignInMethod;
+  emoji: string;
   active: boolean;
   protected: boolean;
   otpVerified: boolean;
@@ -67,6 +68,7 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
     displayName: String(data.displayName || ""),
     role: data.role,
     signIn: normalizeSignIn(data.signIn),
+    emoji: String(data.emoji || ""),
     active: data.active === true,
     protected: data.protected === true,
     otpVerified: data.otpVerified === true,

@@ -12,6 +12,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { errorText, isPermissionDenied } from "../api";
+import { withEmoji } from "../emoji";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
 import { useSession } from "../session";
@@ -88,7 +89,8 @@ export function MessagesScreen({ thread, go }: Props) {
 
   function labelFor(ids: string[]): string {
     const other = ids.find((id) => id !== session.uid);
-    return people.find((person) => person.id === other)?.displayName || "Direct message";
+    const person = people.find((item) => item.id === other);
+    return person ? withEmoji(person.displayName, person.emoji) : "Direct message";
   }
 
   async function openDirect(other: Person) {
@@ -168,7 +170,7 @@ export function MessagesScreen({ thread, go }: Props) {
               .map((person) => (
                 <li key={person.id}>
                   <button type="button" onClick={() => void openDirect(person)}>
-                    {person.displayName}
+                    {withEmoji(person.displayName, person.emoji)}
                   </button>
                 </li>
               ))}
@@ -201,7 +203,7 @@ export function MessagesScreen({ thread, go }: Props) {
       <ul className="list">
         {messages.map((message) => (
           <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"}>
-            <strong>{message.senderName}</strong>
+            <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
             <p>{message.text}</p>
             <p className="meta">{formatStamp(message.createdAt)}</p>
           </li>

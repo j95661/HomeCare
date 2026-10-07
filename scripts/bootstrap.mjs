@@ -76,6 +76,7 @@ async function ensureUser({ email: userEmail, password: userPassword, displayNam
       active: true,
       protected: protectedAccount,
       signIn: existing.exists && existing.get("signIn") ? existing.get("signIn") : "password",
+      emoji: existing.exists ? String(existing.get("emoji") || "") : "",
       otpVerified,
       onShift,
       passwordChangedAt,

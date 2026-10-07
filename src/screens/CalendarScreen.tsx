@@ -13,6 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
+import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { canManageSchedule } from "../roles";
@@ -197,7 +198,7 @@ export function CalendarScreen() {
               <option value="">Choose</option>
               {people.map((person) => (
                 <option key={person.id} value={person.id}>
-                  {person.displayName}
+                  {withEmoji(person.displayName, person.emoji)}
                 </option>
               ))}
             </select>
@@ -252,7 +253,7 @@ export function CalendarScreen() {
                 .filter((shift) => shift.date === date)
                 .map((shift) => (
                   <li key={shift.id} className="card">
-                    <strong>{shift.userName}</strong>
+                    <strong>{withEmoji(shift.userName, people.find((person) => person.id === shift.userId)?.emoji)}</strong>
                     <p>
                       {formatClock(shift.start)} – {formatClock(shift.end)}
                       {people.find((person) => person.id === shift.userId)?.onShift ? " · On shift now" : ""}
@@ -262,7 +263,7 @@ export function CalendarScreen() {
                         <select value={shift.userId} onChange={(event) => void reassign(shift, event.target.value)}>
                           {people.map((person) => (
                             <option key={person.id} value={person.id}>
-                              {person.displayName}
+                              {withEmoji(person.displayName, person.emoji)}
                             </option>
                           ))}
                         </select>
@@ -298,7 +299,7 @@ export function CalendarScreen() {
             <li key={item.id} className="card">
               <strong>{item.type === "day_off" ? "Day off" : "Shift swap"}</strong>
               <p>
-                {item.requesterName} · {formatDay(item.shiftDate)} · {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
+                {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} · {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
               </p>
               <p className="meta">{item.status}{item.acceptedByName ? ` · ${item.acceptedByName}` : ""}</p>
               <ul className="history">

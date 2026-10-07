@@ -37,6 +37,7 @@ type SessionPayload = {
   role: Role;
   displayName: string;
   email: string;
+  emoji: string;
   onShift: boolean;
   passwordChangeRequired: boolean;
   passwordMaxAgeDays: number;
@@ -120,6 +121,7 @@ export function App() {
           email: state.email || user.email || "",
           role: state.role,
           displayName: state.displayName,
+          emoji: state.emoji || "",
           onShift: state.onShift,
           timezone: state.timezone,
           snoozeMinutes: state.snoozeMinutes,
@@ -178,6 +180,13 @@ export function App() {
     return () => window.clearInterval(id);
   }, [gate.kind, load]);
 
+  const setEmoji = useCallback(async (emoji: string) => {
+    const result = await call<{ emoji: string }>("setMyEmoji", { emoji });
+    setGate((current) =>
+      current.kind === "app" ? { kind: "app", session: { ...current.session, emoji: result.emoji } } : current,
+    );
+  }, []);
+
   const setOnShift = useCallback(async (onShift: boolean) => {
     const user = auth.currentUser;
     if (!user) return;
@@ -217,8 +226,8 @@ export function App() {
 
   const sessionValue: SessionValue | null = useMemo(() => {
     if (gate.kind !== "app") return null;
-    return { ...gate.session, setOnShift, onDenied };
-  }, [gate, setOnShift, onDenied]);
+    return { ...gate.session, setOnShift, setEmoji, onDenied };
+  }, [gate, setOnShift, setEmoji, onDenied]);
 
   function go(patch: Partial<RouteState>) {
     const next: RouteState = {
@@ -236,7 +245,12 @@ export function App() {
     <div className="app">
       <header className="top">
         <strong>HammondCare</strong>
-        {gate.kind === "app" ? <span>{gate.session.onShift ? "On shift" : "Off shift"}</span> : null}
+        {gate.kind === "app" ? (
+          <span>
+            {gate.session.emoji ? `${gate.session.emoji} ` : ""}
+            {gate.session.onShift ? "On shift" : "Off shift"}
+          </span>
+        ) : null}
       </header>
       <main className="main">
         {gate.kind === "loading" ? <p className="hint">Loading…</p> : null}

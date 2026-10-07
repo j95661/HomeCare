@@ -25,6 +25,7 @@ export type Session = {
   email: string;
   role: Role;
   displayName: string;
+  emoji: string;
   onShift: boolean;
   timezone: string;
   snoozeMinutes: number;
@@ -37,6 +38,7 @@ export type Person = {
   email: string;
   displayName: string;
   role: Role;
+  emoji?: string;
   signIn?: "password" | "google" | "email_otp";
   active: boolean;
   protected: boolean;

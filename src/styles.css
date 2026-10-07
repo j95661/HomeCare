@@ -213,6 +213,18 @@ h2 { font-size: 1.25rem; }
   align-items: end;
   z-index: 5;
 }
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+button.emoji {
+  min-height: 56px;
+  padding: 6px;
+  font-size: 1.7rem;
+  font-weight: 400;
+  line-height: 1;
+}
 .schemes {
   display: grid;
   gap: 8px;

@@ -16,6 +16,7 @@ import { db } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canDeleteActivities, canManageGuides, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
+import { EMOJI_CHOICES, useEmojiMap, withEmoji } from "../emoji";
 import { applyTheme, COLOR_SCHEMES } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
@@ -263,6 +264,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
 
 export function MedLogScreen() {
   const session = useSession();
+  const emoji = useEmojiMap();
   const [logs, setLogs] = useState<MedLog[]>([]);
   const [error, setError] = useState("");
 
@@ -291,7 +293,7 @@ export function MedLogScreen() {
               {log.medicationName} · {log.action}
             </strong>
             <p>
-              {log.userName} · {log.day} · {log.scheduledTime}
+              {withEmoji(log.userName, emoji.get(log.userId))} · {log.day} · {log.scheduledTime}
               {log.dose ? ` · ${log.dose}` : ""}
             </p>
             {log.note ? <p>{log.note}</p> : null}
@@ -483,7 +485,7 @@ function PersonRow({
   const locked = person.protected || person.role === "super_admin";
   return (
     <li className="card">
-      <strong>{person.displayName}</strong>
+      <strong>{withEmoji(person.displayName, person.emoji)}</strong>
       <p className="meta">
         {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
@@ -602,6 +604,79 @@ export function SettingsScreen() {
   );
 }
 
+function EmojiPicker() {
+  const session = useSession();
+  const [choice, setChoice] = useState(session.emoji);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setChoice(session.emoji);
+  }, [session.emoji]);
+
+  async function save(next: string) {
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    try {
+      await session.setEmoji(next);
+      setSaved(true);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>Your emoji</h2>
+      <p className="hint">Teammates see this next to your name. Pick one, or paste your own.</p>
+      <div className="emoji-grid">
+        {EMOJI_CHOICES.map((item) => (
+          <button
+            key={item}
+            type="button"
+            className={choice === item ? "emoji primary" : "emoji"}
+            data-testid="emoji-choice"
+            data-emoji={item}
+            aria-pressed={choice === item}
+            onClick={() => {
+              setChoice(item);
+              setSaved(false);
+            }}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      <Field label="Emoji">
+        <input
+          data-testid="emoji-input"
+          value={choice}
+          onChange={(event) => {
+            setChoice(event.target.value);
+            setSaved(false);
+          }}
+          maxLength={16}
+          autoComplete="off"
+        />
+      </Field>
+      <button type="button" className="primary" data-testid="emoji-save" disabled={busy} onClick={() => void save(choice)}>
+        Save emoji
+      </button>
+      {session.emoji ? (
+        <button type="button" disabled={busy} onClick={() => void save("")}>
+          Remove emoji
+        </button>
+      ) : null}
+      {saved ? <Notice tone="info">Saved.</Notice> : null}
+      {error ? <Notice>{error}</Notice> : null}
+    </section>
+  );
+}
+
 export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>) => void; onSignOut: () => void }) {
   const session = useSession();
   const [error, setError] = useState("");
@@ -633,9 +708,10 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
   return (
     <div className="stack">
       <h2>More</h2>
-      <p className="meta">
-        {session.displayName} · {roleLabel(session.role)}
+      <p className="meta" data-testid="my-name">
+        {withEmoji(session.displayName, session.emoji)} · {roleLabel(session.role)}
       </p>
+      <EmojiPicker />
       {links
         .filter((link) => link.show)
         .map((link) => (

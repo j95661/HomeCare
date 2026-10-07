@@ -10,6 +10,7 @@ import {
   where,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
+import { useEmojiMap, withEmoji } from "../emoji";
 import { beep } from "../audio";
 import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
@@ -24,6 +25,7 @@ type Props = {
 
 export function HomeScreen({ route, go }: Props) {
   const session = useSession();
+  const emoji = useEmojiMap();
   const [notes, setNotes] = useState<Handover[]>([]);
   const [meds, setMeds] = useState<Medication[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -186,7 +188,7 @@ export function HomeScreen({ route, go }: Props) {
               {index === 0 ? <span className="badge">Pinned</span> : null}
               <p>{note.body}</p>
               <p className="meta">
-                {note.authorName} · {formatStamp(note.createdAt)}
+                {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
               </p>
             </li>
           ))}
@@ -232,7 +234,7 @@ export function HomeScreen({ route, go }: Props) {
         <ul className="list">
           {shifts.map((shift) => (
             <li key={shift.id} className="card">
-              <strong>{shift.userName}</strong>
+              <strong>{withEmoji(shift.userName, emoji.get(shift.userId))}</strong>
               <p>
                 {formatClock(shift.start)} – {formatClock(shift.end)}
               </p>

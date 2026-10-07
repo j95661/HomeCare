@@ -20,6 +20,7 @@ import { sendVisiblePush, unsubscribeTokens } from "./notify";
 import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
+import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { isColorScheme } from "./logic/themes";
 import { isRole, type Role } from "./logic/roles";
@@ -77,6 +78,7 @@ export const getSessionState = onCall(callable, async (request) => {
     role: profile.role,
     displayName: profile.displayName,
     email: profile.email,
+    emoji: profile.emoji,
     onShift: profile.onShift,
     signIn: profile.signIn,
     passwordChangeRequired: needsPasswordChange(profile.signIn, active, profile.otpVerified, expires, new Date()),
@@ -262,6 +264,7 @@ export const createUserAccount = onCall(callable, async (request) => {
     displayName,
     role,
     signIn: "email_otp",
+    emoji: "",
     active: true,
     protected: false,
     otpVerified: false,
@@ -322,6 +325,7 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
       displayName,
       role,
       signIn: "google",
+      emoji: "",
       active: true,
       protected: false,
       otpVerified: true,
@@ -395,6 +399,14 @@ export const updateUserAccount = onCall(callable, async (request) => {
   await auth.updateUser(uid, { displayName });
   await auth.setCustomUserClaims(uid, { role, active: target.active, otpVerified: target.otpVerified });
   return { updated: true };
+});
+
+export const setMyEmoji = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  const parsed = normalizeEmoji(String(asObject(request.data).emoji ?? ""));
+  if (!parsed.ok) throw new HttpsError("invalid-argument", parsed.reason);
+  await db.doc(`users/${caller.uid}`).update({ emoji: parsed.emoji });
+  return { emoji: parsed.emoji };
 });
 
 export const revokeUserAccount = onCall(callable, async (request) => {
@@ -553,11 +565,12 @@ export const logMedicationResponse = onCall(callable, async (request) => {
   return { logged: true };
 });
 
-async function loadActiveUsers(): Promise<ReminderUser[]> {
+async function loadActiveUsers(): Promise<Array<ReminderUser & { emoji: string }>> {
   const snap = await db.collection("users").get();
   return snap.docs.map((doc) => ({
     uid: doc.id,
     displayName: String(doc.get("displayName") || ""),
+    emoji: String(doc.get("emoji") || ""),
     active: doc.get("active") === true,
     otpVerified: doc.get("otpVerified") === true,
     onShift: doc.get("onShift") === true,
@@ -784,11 +797,13 @@ async function notifyMessage(
   } else {
     recipients = users.filter((user) => user.uid !== senderId).map((user) => user.uid);
   }
+  const sender = users.find((user) => user.uid === senderId);
+  const title = withEmoji(senderName || "New message", sender?.emoji);
   await sendVisiblePush(db, messaging, recipients, {
-    title: senderName || "New message",
+    title,
     body: preview,
     link: `/?view=messages&thread=${encodeURIComponent(threadId)}`,
-    data: { type: "message", threadId, title: senderName || "New message", body: preview },
+    data: { type: "message", threadId, title, body: preview },
   });
 }
 
