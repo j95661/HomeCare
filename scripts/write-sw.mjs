@@ -39,7 +39,7 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const data = payload.data || {};
   if (payload.notification) return;
-  const title = data.title || "HomeCare";
+  const title = data.title || "HammondCare";
   const body = data.body || "";
   self.registration.showNotification(title, {
     body,

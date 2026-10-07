@@ -11,7 +11,7 @@ export function errorText(error: unknown): string {
   const message =
     error && typeof error === "object" && "message" in error ? String((error as { message: string }).message || "") : "";
   if (/failed to fetch|network request failed|internal/i.test(message)) {
-    return "Can't reach HomeCare services. If this is a local install, start the Firebase emulators and try again.";
+    return "Can't reach HammondCare services. If this is a local install, start the Firebase emulators and try again.";
   }
   return message || "Something went wrong.";
 }

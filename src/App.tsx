@@ -209,7 +209,7 @@ export function App() {
   return (
     <div className="app">
       <header className="top">
-        <strong>HomeCare</strong>
+        <strong>HammondCare</strong>
         {gate.kind === "app" ? <span>{gate.session.onShift ? "On shift" : "Off shift"}</span> : null}
       </header>
       <main className="main">

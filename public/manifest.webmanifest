@@ -1,6 +1,6 @@
 {
-  "name": "HomeCare",
-  "short_name": "HomeCare",
+  "name": "HammondCare",
+  "short_name": "HammondCare",
   "description": "Private family care schedule, medications, and notes.",
   "start_url": "/",
   "scope": "/",

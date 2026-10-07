@@ -29,7 +29,7 @@ export async function sendOtpEmail(email: string, code: string): Promise<void> {
   await transport.sendMail({
     from,
     to: email,
-    subject: "Your HomeCare sign-in code",
-    text: `Your HomeCare sign-in code is ${code}. It expires in 10 minutes.`,
+    subject: "Your HammondCare sign-in code",
+    text: `Your HammondCare sign-in code is ${code}. It expires in 10 minutes.`,
   });
 }

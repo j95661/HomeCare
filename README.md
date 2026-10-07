@@ -1,4 +1,4 @@
-# HomeCare
+# HammondCare
 
 Private family care app for a small team. Each person has their own email and password. Care data lives in Firestore and is allowed only by security rules.
 
@@ -36,7 +36,7 @@ Password changes are required on a schedule. The default is 183 days (about six 
 
 The manifest uses `display: "standalone"`. Add the site to the Home Screen, then open it from that icon.
 
-On iPhone, push works on iOS 16.4 or later, and only from the Home Screen app. The Enable notifications button refuses to run in a normal browser tab. Tap it after you have opened HomeCare from the icon.
+On iPhone, push works on iOS 16.4 or later, and only from the Home Screen app. The Enable notifications button refuses to run in a normal browser tab. Tap it after you have opened HammondCare from the icon.
 
 ## Local emulators
 

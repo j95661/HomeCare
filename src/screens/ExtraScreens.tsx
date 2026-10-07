@@ -598,7 +598,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
         </button>
       ) : (
         <p className="hint">
-          iPhone: tap Share, then Add to Home Screen. Open HomeCare from that icon. Push needs iOS 16.4 or later.
+          iPhone: tap Share, then Add to Home Screen. Open HammondCare from that icon. Push needs iOS 16.4 or later.
           Android: use the browser menu, then Install app or Add to Home Screen.
         </p>
       )}
