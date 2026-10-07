@@ -1,0 +1,394 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
+import { doc, updateDoc } from "firebase/firestore";
+import { authError, call, errorText } from "./api";
+import { auth, db } from "./firebase";
+import { Field, Notice } from "./components";
+import { CalendarScreen } from "./screens/CalendarScreen";
+import { ActivitiesScreen, GuidesScreen, MedLogScreen, MoreScreen, PeopleScreen, SettingsScreen } from "./screens/ExtraScreens";
+import { HomeScreen } from "./screens/HomeScreen";
+import { MedsScreen } from "./screens/MedsScreen";
+import { MessagesScreen } from "./screens/MessagesScreen";
+import { SessionProvider, type SessionValue } from "./session";
+import type { Role, RouteState, Session, ViewName } from "./types";
+
+type Gate =
+  | { kind: "loading" }
+  | { kind: "signedOut"; notice?: string }
+  | { kind: "error"; message: string }
+  | { kind: "otp"; email: string }
+  | { kind: "password"; email: string; days: number }
+  | { kind: "app"; session: Session };
+
+type SessionPayload = {
+  active: boolean;
+  otpVerified: boolean;
+  role: Role;
+  displayName: string;
+  email: string;
+  onShift: boolean;
+  passwordChangeRequired: boolean;
+  passwordMaxAgeDays: number;
+  timezone: string;
+  snoozeMinutes: number;
+};
+
+const VIEWS = new Set<ViewName>([
+  "home",
+  "calendar",
+  "messages",
+  "more",
+  "meds",
+  "medlog",
+  "activities",
+  "guides",
+  "people",
+  "settings",
+]);
+
+function readRoute(): RouteState {
+  const params = new URLSearchParams(window.location.search);
+  const viewParam = params.get("view") || "home";
+  return {
+    view: VIEWS.has(viewParam as ViewName) ? (viewParam as ViewName) : "home",
+    thread: params.get("thread"),
+    guide: params.get("guide"),
+    med: params.get("med"),
+    time: params.get("time"),
+  };
+}
+
+function writeRoute(next: RouteState) {
+  const params = new URLSearchParams();
+  if (next.view !== "home") params.set("view", next.view);
+  if (next.thread) params.set("thread", next.thread);
+  if (next.guide) params.set("guide", next.guide);
+  if (next.med) params.set("med", next.med);
+  if (next.time) params.set("time", next.time);
+  const qs = params.toString();
+  window.history.pushState(next, "", qs ? `/?${qs}` : "/");
+}
+
+export function App() {
+  const [gate, setGate] = useState<Gate>({ kind: "loading" });
+  const [route, setRoute] = useState<RouteState>(() => readRoute());
+  const skipSignOut = useRef(false);
+  const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
+
+  const load = useCallback(async (user: User) => {
+    try {
+      const state = await call<SessionPayload>("getSessionState");
+      if (!state.active) {
+        await signOut(auth);
+        setGate({ kind: "signedOut", notice: "This account has been revoked." });
+        return;
+      }
+      if (!state.otpVerified) {
+        setGate({ kind: "otp", email: state.email || user.email || "" });
+        return;
+      }
+      if (state.passwordChangeRequired) {
+        setGate({ kind: "password", email: state.email || user.email || "", days: state.passwordMaxAgeDays });
+        return;
+      }
+      setGate({
+        kind: "app",
+        session: {
+          uid: user.uid,
+          email: state.email || user.email || "",
+          role: state.role,
+          displayName: state.displayName,
+          onShift: state.onShift,
+          timezone: state.timezone,
+          snoozeMinutes: state.snoozeMinutes,
+          passwordMaxAgeDays: state.passwordMaxAgeDays,
+        },
+      });
+    } catch (error) {
+      setGate({ kind: "error", message: errorText(error) });
+    }
+  }, []);
+
+  loadRef.current = load;
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        if (skipSignOut.current) return;
+        setGate({ kind: "signedOut" });
+        return;
+      }
+      skipSignOut.current = false;
+      setGate({ kind: "loading" });
+      void load(user);
+    });
+  }, [load]);
+
+  useEffect(() => {
+    const onPop = () => setRoute(readRoute());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  useEffect(() => {
+    if (gate.kind !== "app") return;
+    const id = window.setInterval(() => {
+      const user = auth.currentUser;
+      if (user) void load(user);
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, [gate.kind, load]);
+
+  const setOnShift = useCallback(async (onShift: boolean) => {
+    const user = auth.currentUser;
+    if (!user) return;
+    await updateDoc(doc(db, "users", user.uid), { onShift });
+    setGate((current) =>
+      current.kind === "app" ? { kind: "app", session: { ...current.session, onShift } } : current,
+    );
+  }, []);
+
+  const onDenied = useCallback(() => {
+    const user = auth.currentUser;
+    if (user) void loadRef.current(user);
+  }, []);
+
+  const sessionValue: SessionValue | null = useMemo(() => {
+    if (gate.kind !== "app") return null;
+    return { ...gate.session, setOnShift, onDenied };
+  }, [gate, setOnShift, onDenied]);
+
+  function go(patch: Partial<RouteState>) {
+    const next: RouteState = {
+      view: patch.view ?? route.view,
+      thread: patch.thread === undefined ? route.thread : patch.thread,
+      guide: patch.guide === undefined ? route.guide : patch.guide,
+      med: patch.med === undefined ? route.med : patch.med,
+      time: patch.time === undefined ? route.time : patch.time,
+    };
+    writeRoute(next);
+    setRoute(next);
+  }
+
+  return (
+    <div className="app">
+      <header className="top">
+        <strong>HomeCare</strong>
+        {gate.kind === "app" ? <span>{gate.session.onShift ? "On shift" : "Off shift"}</span> : null}
+      </header>
+      <main className="main">
+        {gate.kind === "loading" ? <p className="hint">Loading…</p> : null}
+        {gate.kind === "error" ? (
+          <div className="stack">
+            <Notice>{gate.message}</Notice>
+            <button type="button" onClick={() => auth.currentUser && void load(auth.currentUser)}>
+              Try again
+            </button>
+          </div>
+        ) : null}
+        {gate.kind === "signedOut" ? <LoginScreen notice={gate.notice} /> : null}
+        {gate.kind === "otp" ? <OtpScreen email={gate.email} onDone={() => auth.currentUser && void load(auth.currentUser)} /> : null}
+        {gate.kind === "password" ? (
+          <PasswordScreen
+            email={gate.email}
+            days={gate.days}
+            onDone={async (newPassword) => {
+              skipSignOut.current = true;
+              await signInWithEmailAndPassword(auth, gate.email, newPassword);
+            }}
+          />
+        ) : null}
+        {gate.kind === "app" && sessionValue ? (
+          <SessionProvider value={sessionValue}>
+            {route.view !== "home" && route.view !== "calendar" && route.view !== "messages" && route.view !== "more" ? (
+              <button type="button" onClick={() => go({ view: "more", guide: null, thread: null, med: null, time: null })}>
+                Back
+              </button>
+            ) : null}
+            {route.view === "home" ? <HomeScreen route={route} go={go} /> : null}
+            {route.view === "calendar" ? <CalendarScreen /> : null}
+            {route.view === "messages" ? <MessagesScreen thread={route.thread} go={go} /> : null}
+            {route.view === "more" ? <MoreScreen go={go} onSignOut={() => void signOut(auth)} /> : null}
+            {route.view === "meds" ? <MedsScreen /> : null}
+            {route.view === "activities" ? <ActivitiesScreen /> : null}
+            {route.view === "guides" ? <GuidesScreen guideId={route.guide} go={go} /> : null}
+            {route.view === "medlog" ? <MedLogScreen /> : null}
+            {route.view === "people" ? <PeopleScreen /> : null}
+            {route.view === "settings" ? <SettingsScreen /> : null}
+          </SessionProvider>
+        ) : null}
+      </main>
+      {gate.kind === "app" ? (
+        <nav className="nav">
+          <button type="button" data-testid="nav-home" className={route.view === "home" ? "primary" : ""} onClick={() => go({ view: "home", thread: null, guide: null })}>
+            Home
+          </button>
+          <button type="button" data-testid="nav-calendar" className={route.view === "calendar" ? "primary" : ""} onClick={() => go({ view: "calendar", thread: null, guide: null })}>
+            Calendar
+          </button>
+          <button type="button" data-testid="nav-messages" className={route.view === "messages" ? "primary" : ""} onClick={() => go({ view: "messages", guide: null })}>
+            Messages
+          </button>
+          <button type="button" data-testid="nav-more" className={route.view === "more" ? "primary" : ""} onClick={() => go({ view: "more", thread: null, guide: null })}>
+            More
+          </button>
+        </nav>
+      ) : null}
+    </div>
+  );
+}
+
+function LoginScreen({ notice }: { notice?: string }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err) {
+      setError(authError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={(event) => void submit(event)}>
+      <h1>Sign in</h1>
+      {notice ? <Notice>{notice}</Notice> : null}
+      <Field label="Email">
+        <input data-testid="login-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+      </Field>
+      <Field label="Password">
+        <input data-testid="login-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+      </Field>
+      {error ? <Notice>{error}</Notice> : null}
+      <button className="primary" data-testid="login-submit" disabled={busy} type="submit">
+        Sign in
+      </button>
+      <p className="hint">Each person uses their own email and password.</p>
+    </form>
+  );
+}
+
+function OtpScreen({ email, onDone }: { email: string; onDone: () => void }) {
+  const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("Sending a code…");
+  const [busy, setBusy] = useState(false);
+  const started = useRef(false);
+
+  async function send() {
+    setError("");
+    try {
+      const result = await call<{ sent: boolean; devCode?: string }>("requestEmailOtp");
+      setInfo(`A 6-digit code was sent to ${email}.`);
+      if (result.devCode) setDevCode(result.devCode);
+    } catch (err) {
+      setInfo("");
+      setError(errorText(err));
+    }
+  }
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void send();
+  }, []);
+
+  async function verify(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await call("verifyEmailOtp", { code });
+      onDone();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={(event) => void verify(event)}>
+      <h1>Check your email</h1>
+      {info ? <p className="hint">{info}</p> : null}
+      {devCode ? (
+        <p className="notice" data-testid="dev-otp">
+          Emulator code: {devCode}
+        </p>
+      ) : null}
+      <Field label="6-digit code">
+        <input
+          data-testid="otp-code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={code}
+          onChange={(event) => setCode(event.target.value)}
+          required
+        />
+      </Field>
+      {error ? <Notice>{error}</Notice> : null}
+      <button className="primary" data-testid="otp-submit" disabled={busy} type="submit">
+        Verify code
+      </button>
+      <button type="button" onClick={() => void send()}>
+        Send a new code
+      </button>
+    </form>
+  );
+}
+
+function PasswordScreen({ email, days, onDone }: { email: string; days: number; onDone: (password: string) => Promise<void> }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (newPassword !== confirm) {
+      setError("The new passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await call("changePassword", { currentPassword, newPassword });
+      await onDone(newPassword);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={(event) => void submit(event)}>
+      <h1>Update password</h1>
+      <p className="hint">Passwords must be changed every {days} days. This is for {email}.</p>
+      <Field label="Current password">
+        <input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
+      </Field>
+      <Field label="New password">
+        <input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+      </Field>
+      <Field label="Confirm new password">
+        <input type="password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} required />
+      </Field>
+      {error ? <Notice>{error}</Notice> : null}
+      <button className="primary" disabled={busy} type="submit">
+        Update password
+      </button>
+    </form>
+  );
+}

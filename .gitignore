@@ -1,0 +1,14 @@
+node_modules/
+dist/
+functions/lib/
+functions/node_modules/
+public/sw.js
+.env
+.env.local
+.env.production
+*.log
+.firebase/
+firestore-debug.log
+ui-debug.log
+.DS_Store
+coverage/

@@ -1,0 +1,44 @@
+export const ROLES = ["super_admin", "admin", "team_lead", "care_provider"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ASSIGNABLE_ROLES: Role[] = ["admin", "team_lead", "care_provider"];
+
+export function isRole(value: unknown): value is Role {
+  return typeof value === "string" && (ROLES as readonly string[]).includes(value);
+}
+
+export function canRevoke(role: Role): boolean {
+  return role === "super_admin";
+}
+
+export function isProtectedAccount(user: { role: Role; protected?: boolean }): boolean {
+  return user.role === "super_admin" || user.protected === true;
+}
+
+export function canAssignRole(callerRole: Role, nextRole: Role): boolean {
+  return callerRole === "super_admin" && nextRole !== "super_admin" && ASSIGNABLE_ROLES.includes(nextRole);
+}
+
+export function canManageMedications(role: Role): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
+export function canManageGuides(role: Role): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
+export function canManageSchedule(role: Role): boolean {
+  return role === "super_admin" || role === "admin" || role === "team_lead";
+}
+
+export function canReviewAllLogs(role: Role): boolean {
+  return canManageSchedule(role);
+}
+
+export function canDeleteActivities(role: Role): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
+export function canWriteSettings(role: Role): boolean {
+  return role === "super_admin";
+}
