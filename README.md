@@ -67,10 +67,13 @@ Open http://127.0.0.1:5173.
 
 ## Production
 
-Create a Firebase project (Auth email/password, Firestore, Functions, Hosting, Cloud Messaging). Put the web config in the environment, with `VITE_USE_EMULATORS=false`. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`). `FIREBASE_WEB_API_KEY` must match the web API key so password changes can check the current password.
+The live project is [hammondcare-ce36f](https://console.firebase.google.com/project/hammondcare-ce36f/overview). `.firebaserc` deploys there. Local emulators stay on the `demo` alias (`demo-family-care`).
+
+In the console, turn on Authentication with email and password, create a Firestore database, and use the Blaze plan so Cloud Functions can deploy. Add a Web app named HomeCare, then copy its config into `.env.production` with `VITE_USE_EMULATORS=false`. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`). `FIREBASE_WEB_API_KEY` must match the web API key so password changes can check the current password.
 
 ```bash
-npx firebase use --add
+npx firebase login
+npx firebase use hammondcare-ce36f
 npm run build
 npx firebase deploy --only firestore:rules,firestore:indexes,functions,hosting
 SUPER_ADMIN_EMAIL=you@example.com SUPER_ADMIN_PASSWORD='choose-a-password1' npm run bootstrap
