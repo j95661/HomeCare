@@ -34,8 +34,8 @@ export async function revokeAccount(
 ): Promise<void> {
   if (!caller.active || !caller.otpVerified) throw new AuthzError("Account is not active.");
   if (!canRevoke(caller.role)) throw new AuthzError("Only the super admin can revoke users.");
-  if (caller.uid === target.uid) throw new AuthzError("You cannot revoke your own account.");
   if (isProtectedAccount(target)) throw new AuthzError("The super admin cannot be revoked.");
+  if (caller.uid === target.uid) throw new AuthzError("You cannot revoke your own account.");
 
   // Firestore first so a still-valid ID token fails security rules immediately.
   await deps.markInactive(target.uid, caller.uid);
