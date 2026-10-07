@@ -67,9 +67,11 @@ Open http://127.0.0.1:5173.
 
 ## Production
 
-The live project is [hammondcare-ce36f](https://console.firebase.google.com/project/hammondcare-ce36f/overview). `.firebaserc` deploys there. Local emulators stay on the `demo` alias (`demo-family-care`).
+The live project is [hammondcare-ce36f](https://console.firebase.google.com/project/hammondcare-ce36f/overview). The site is [hammondcare-ce36f.web.app](https://hammondcare-ce36f.web.app). `.firebaserc` deploys there. Local emulators stay on the `demo` alias (`demo-family-care`).
 
-In the console, turn on Authentication with email and password, create a Firestore database, and use the Blaze plan so Cloud Functions can deploy. Add a Web app named HomeCare, then copy its config into `.env.production` with `VITE_USE_EMULATORS=false`. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`). `FIREBASE_WEB_API_KEY` must match the web API key so password changes can check the current password.
+The web app is registered. Firestore is created in `nam5`. The public web config is in `.env.example`. Copy it to `.env.production` before a production build.
+
+Cloud Functions and email/password sign-in on this project require the Blaze plan. Upgrade billing, then turn on Authentication with email and password. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) for the functions. `FIREBASE_WEB_API_KEY` must match the web API key so password changes can check the current password.
 
 ```bash
 npx firebase login
