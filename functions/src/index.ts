@@ -50,7 +50,7 @@ async function stampPassword(uid: string, when: Date, maxAgeDays: number): Promi
 
 async function verifyCurrentPassword(email: string, password: string): Promise<void> {
   const host = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-  const apiKey = process.env.FIREBASE_WEB_API_KEY || "demo-api-key";
+  const apiKey = process.env.HOMECARE_WEB_API_KEY || process.env.FIREBASE_WEB_API_KEY || "demo-api-key";
   const url = host
     ? `http://${host}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`
     : `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;

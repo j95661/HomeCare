@@ -71,7 +71,7 @@ The live project is [hammondcare-ce36f](https://console.firebase.google.com/proj
 
 The web app is registered. Firestore is created in `nam5`. The public web config is in `.env.example`. Copy it to `.env.production` before a production build.
 
-Cloud Functions and email/password sign-in on this project require the Blaze plan. Upgrade billing, then turn on Authentication with email and password. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) for the functions. `FIREBASE_WEB_API_KEY` must match the web API key so password changes can check the current password.
+Cloud Functions and email/password sign-in on this project require the Blaze plan. Upgrade billing, then turn on Authentication with email and password. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) for the functions. `HOMECARE_WEB_API_KEY` must match the web API key so password changes can check the current password. Firebase rejects environment names that start with `FIREBASE_`.
 
 ```bash
 npx firebase login
