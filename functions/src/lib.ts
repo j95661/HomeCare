@@ -6,7 +6,7 @@ import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { DEFAULT_TIMEZONE } from "./logic/password";
 import { isRole, type Role } from "./logic/roles";
 import { normalizeSignIn, type SignInMethod } from "./logic/signin";
-import { DEFAULT_COLOR_SCHEME, isColorScheme, type ColorSchemeId } from "./logic/themes";
+import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme, type ColorSchemeId } from "./logic/themes";
 
 if (getApps().length === 0) initializeApp();
 
@@ -20,6 +20,7 @@ export type UserRecordData = {
   role: Role;
   signIn: SignInMethod;
   emoji: string;
+  colorScheme: ColorSchemeId | "";
   active: boolean;
   protected: boolean;
   otpVerified: boolean;
@@ -62,6 +63,7 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
   if (!snap.exists) throw new HttpsError("permission-denied", "No profile for this account.");
   const data = snap.data() ?? {};
   if (!isRole(data.role)) throw new HttpsError("failed-precondition", "This account has no role.");
+  const personalScheme = normalizePersonalColorScheme(data.colorScheme);
   return {
     uid,
     email: String(data.email || ""),
@@ -69,6 +71,7 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
     role: data.role,
     signIn: normalizeSignIn(data.signIn),
     emoji: String(data.emoji || ""),
+    colorScheme: personalScheme.ok ? personalScheme.colorScheme : "",
     active: data.active === true,
     protected: data.protected === true,
     otpVerified: data.otpVerified === true,

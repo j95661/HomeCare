@@ -22,7 +22,7 @@ import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpCh
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
-import { isColorScheme } from "./logic/themes";
+import { isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
 import { isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
@@ -86,6 +86,7 @@ export const getSessionState = onCall(callable, async (request) => {
     timezone: settings.timezone,
     snoozeMinutes: settings.snoozeMinutes,
     colorScheme: settings.colorScheme,
+    personalColorScheme: profile.colorScheme,
   };
 });
 
@@ -265,6 +266,7 @@ export const createUserAccount = onCall(callable, async (request) => {
     role,
     signIn: "email_otp",
     emoji: "",
+    colorScheme: "",
     active: true,
     protected: false,
     otpVerified: false,
@@ -326,6 +328,7 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
       role,
       signIn: "google",
       emoji: "",
+      colorScheme: "",
       active: true,
       protected: false,
       otpVerified: true,
@@ -407,6 +410,14 @@ export const setMyEmoji = onCall(callable, async (request) => {
   if (!parsed.ok) throw new HttpsError("invalid-argument", parsed.reason);
   await db.doc(`users/${caller.uid}`).update({ emoji: parsed.emoji });
   return { emoji: parsed.emoji };
+});
+
+export const setMyColorScheme = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  const parsed = normalizePersonalColorScheme(asObject(request.data).colorScheme);
+  if (!parsed.ok) throw new HttpsError("invalid-argument", parsed.reason);
+  await db.doc(`users/${caller.uid}`).update({ colorScheme: parsed.colorScheme });
+  return { colorScheme: parsed.colorScheme };
 });
 
 export const revokeUserAccount = onCall(callable, async (request) => {

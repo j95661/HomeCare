@@ -581,7 +581,8 @@ export function SettingsScreen() {
         <input inputMode="numeric" value={snooze} onChange={(event) => setSnooze(event.target.value)} />
       </Field>
       <fieldset className="schemes">
-        <legend>Color scheme</legend>
+        <legend>Team color scheme</legend>
+        <p className="hint">People who have not picked their own scheme see this one.</p>
         {COLOR_SCHEMES.map((item) => (
           <button
             key={item.id}
@@ -601,6 +602,79 @@ export function SettingsScreen() {
       {saved ? <Notice tone="info">Saved.</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
+  );
+}
+
+function SchemePicker() {
+  const session = useSession();
+  const [choice, setChoice] = useState(session.personalColorScheme || "team");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || "Forest";
+
+  useEffect(() => {
+    setChoice(session.personalColorScheme || "team");
+  }, [session.personalColorScheme]);
+
+  useEffect(() => {
+    applyTheme(choice === "team" ? session.colorScheme || "forest" : choice);
+  }, [choice, session.colorScheme]);
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    try {
+      await session.setColorScheme(choice === "team" ? "" : choice);
+      setSaved(true);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>Your color scheme</h2>
+      <p className="hint">This changes the colors on your screen only.</p>
+      <fieldset className="schemes">
+        <legend>Color scheme</legend>
+        <button
+          type="button"
+          data-testid="personal-scheme-team"
+          className={choice === "team" ? "primary" : ""}
+          onClick={() => {
+            setChoice("team");
+            setSaved(false);
+          }}
+        >
+          <span className="swatch" style={{ background: COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.accent ?? "#0c3b2e" }} />
+          Team default ({teamLabel})
+        </button>
+        {COLOR_SCHEMES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            data-testid={`personal-scheme-${item.id}`}
+            className={choice === item.id ? "primary" : ""}
+            onClick={() => {
+              setChoice(item.id);
+              setSaved(false);
+            }}
+          >
+            <span className="swatch" style={{ background: item.accent }} />
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
+      <button type="button" className="primary" data-testid="scheme-save" disabled={busy} onClick={() => void save()}>
+        Save color scheme
+      </button>
+      {saved ? <Notice tone="info">Saved.</Notice> : null}
+      {error ? <Notice>{error}</Notice> : null}
+    </section>
   );
 }
 
@@ -711,6 +785,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
       <p className="meta" data-testid="my-name">
         {withEmoji(session.displayName, session.emoji)} · {roleLabel(session.role)}
       </p>
+      <SchemePicker />
       <EmojiPicker />
       {links
         .filter((link) => link.show)

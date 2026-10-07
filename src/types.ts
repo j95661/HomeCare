@@ -31,6 +31,7 @@ export type Session = {
   snoozeMinutes: number;
   passwordMaxAgeDays: number;
   colorScheme: string;
+  personalColorScheme: string;
 };
 
 export type Person = {

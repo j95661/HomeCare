@@ -186,6 +186,7 @@ describe("security rules", () => {
     await assertFails(setDoc(doc(dbFor("super"), "users/newbie"), { role: "admin", active: true }));
     await assertSucceeds(updateDoc(doc(dbFor("pat"), "users/pat"), { onShift: false }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { emoji: "🌻" }));
+    await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { colorScheme: "night" }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/sam"), { onShift: true }));
   });
 

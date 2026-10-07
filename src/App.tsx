@@ -44,6 +44,7 @@ type SessionPayload = {
   timezone: string;
   snoozeMinutes: number;
   colorScheme: string;
+  personalColorScheme: string;
 };
 
 const VIEWS = new Set<ViewName>([
@@ -127,6 +128,7 @@ export function App() {
           snoozeMinutes: state.snoozeMinutes,
           passwordMaxAgeDays: state.passwordMaxAgeDays,
           colorScheme: state.colorScheme || "forest",
+          personalColorScheme: state.personalColorScheme || "",
         },
       });
     } catch (error) {
@@ -161,15 +163,25 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  const personalScheme = gate.kind === "app" ? gate.session.personalColorScheme : "";
+  const editingAppearance = gate.kind === "app" && (route.view === "more" || route.view === "settings");
+
   useEffect(() => {
     if (gate.kind !== "app") {
       applyTheme("forest");
       return;
     }
     return onSnapshot(doc(db, "settings/app"), (snap) => {
-      applyTheme(String(snap.get("colorScheme") || "forest"));
+      const team = String(snap.get("colorScheme") || "forest");
+      setGate((current) =>
+        current.kind === "app" && current.session.colorScheme !== team
+          ? { kind: "app", session: { ...current.session, colorScheme: team } }
+          : current,
+      );
+      if (editingAppearance) return;
+      applyTheme(personalScheme || team);
     });
-  }, [gate.kind]);
+  }, [gate.kind, personalScheme, editingAppearance]);
 
   useEffect(() => {
     if (gate.kind !== "app") return;
@@ -179,6 +191,15 @@ export function App() {
     }, 60000);
     return () => window.clearInterval(id);
   }, [gate.kind, load]);
+
+  const setColorScheme = useCallback(async (colorScheme: string) => {
+    const result = await call<{ colorScheme: string }>("setMyColorScheme", { colorScheme });
+    setGate((current) =>
+      current.kind === "app"
+        ? { kind: "app", session: { ...current.session, personalColorScheme: result.colorScheme } }
+        : current,
+    );
+  }, []);
 
   const setEmoji = useCallback(async (emoji: string) => {
     const result = await call<{ emoji: string }>("setMyEmoji", { emoji });
@@ -226,8 +247,8 @@ export function App() {
 
   const sessionValue: SessionValue | null = useMemo(() => {
     if (gate.kind !== "app") return null;
-    return { ...gate.session, setOnShift, setEmoji, onDenied };
-  }, [gate, setOnShift, setEmoji, onDenied]);
+    return { ...gate.session, setOnShift, setEmoji, setColorScheme, onDenied };
+  }, [gate, setOnShift, setEmoji, setColorScheme, onDenied]);
 
   function go(patch: Partial<RouteState>) {
     const next: RouteState = {
