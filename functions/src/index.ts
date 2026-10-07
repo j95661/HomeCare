@@ -19,7 +19,8 @@ import { sendOtpEmail } from "./email";
 import { sendVisiblePush, unsubscribeTokens } from "./notify";
 import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
-import { assertTimezone, expiresAt, isPasswordExpired, validatePassword } from "./logic/password";
+import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
+import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { isColorScheme } from "./logic/themes";
 import { isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
@@ -77,7 +78,8 @@ export const getSessionState = onCall(callable, async (request) => {
     displayName: profile.displayName,
     email: profile.email,
     onShift: profile.onShift,
-    passwordChangeRequired: active && profile.otpVerified && isPasswordExpired(expires, new Date()),
+    signIn: profile.signIn,
+    passwordChangeRequired: needsPasswordChange(profile.signIn, active, profile.otpVerified, expires, new Date()),
     passwordMaxAgeDays: settings.passwordMaxAgeDays,
     timezone: settings.timezone,
     snoozeMinutes: settings.snoozeMinutes,
@@ -94,24 +96,7 @@ export const requestEmailOtp = onCall(callable, async (request) => {
   }
   if (profile.otpVerified) throw new HttpsError("failed-precondition", "This email is already verified.");
 
-  const ref = db.doc(`private/otp/challenges/${uid}`);
-  const existingSnap = await ref.get();
-  const existing = existingSnap.exists ? (existingSnap.data() as OtpChallenge) : null;
-  const now = Date.now();
-  const gate = canSendOtp(existing, now);
-  if (!gate.ok) throw new HttpsError("resource-exhausted", gate.reason);
-
-  const code = String(randomInt(0, 1000000)).padStart(6, "0");
-  await ref.set({
-    hash: hashOtp(uid, code, pepper()),
-    expiresAt: now + OTP_TTL_MS,
-    attempts: 0,
-    lastSentAt: now,
-    hourlyCount: gate.hourlyCount,
-    windowStart: gate.windowStart,
-  });
-  await sendOtpEmail(profile.email, code);
-  return isEmulator() ? { sent: true, devCode: code } : { sent: true };
+  return issueSignInCode(uid, profile.email);
 });
 
 export const verifyEmailOtp = onCall(callable, async (request) => {
@@ -149,6 +134,9 @@ export const changePassword = onCall(callable, async (request) => {
     throw new HttpsError("permission-denied", "This account has been revoked.");
   }
   if (!profile.otpVerified) throw new HttpsError("failed-precondition", "Verify the email code first.");
+  if (normalizeSignIn(profile.signIn) !== "password") {
+    throw new HttpsError("failed-precondition", "This account signs in without a password.");
+  }
   const body = asObject(request.data);
   const currentPassword = String(body.currentPassword ?? "");
   const newPassword = String(body.newPassword ?? "");
@@ -165,20 +153,80 @@ export const changePassword = onCall(callable, async (request) => {
   return { updated: true };
 });
 
+async function issueSignInCode(uid: string, email: string): Promise<{ sent: true; devCode?: string }> {
+  const ref = db.doc(`private/otp/challenges/${uid}`);
+  const existingSnap = await ref.get();
+  const existing = existingSnap.exists ? (existingSnap.data() as OtpChallenge) : null;
+  const now = Date.now();
+  const gate = canSendOtp(existing, now);
+  if (!gate.ok) throw new HttpsError("resource-exhausted", gate.reason);
+
+  const code = String(randomInt(0, 1000000)).padStart(6, "0");
+  await ref.set({
+    hash: hashOtp(uid, code, pepper()),
+    expiresAt: now + OTP_TTL_MS,
+    attempts: 0,
+    lastSentAt: now,
+    hourlyCount: gate.hourlyCount,
+    windowStart: gate.windowStart,
+  });
+  await sendOtpEmail(email, code);
+  return isEmulator() ? { sent: true, devCode: code } : { sent: true };
+}
+
+async function assertEmailFree(email: string): Promise<void> {
+  try {
+    await auth.getUserByEmail(email);
+    throw new HttpsError("already-exists", "That email already has an account.");
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    const code = (error as { code?: string }).code;
+    if (code !== "auth/user-not-found") throw error;
+  }
+  const users = await db.collection("users").where("email", "==", email).limit(1).get();
+  if (!users.empty) throw new HttpsError("already-exists", "That email already has an account.");
+  const invite = await db.doc(`invites/${email}`).get();
+  if (invite.exists) throw new HttpsError("already-exists", "That email already has an invite.");
+}
+
+async function emailCodeAccount(email: string): Promise<{ uid: string; role: Role }> {
+  if (!validEmail(email)) throw new HttpsError("invalid-argument", "Enter a valid email.");
+  let record: { uid: string; disabled: boolean };
+  try {
+    record = await auth.getUserByEmail(email);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/user-not-found") {
+      throw new HttpsError("not-found", "That email is not set up for a sign-in code.");
+    }
+    throw error;
+  }
+  const snap = await db.doc(`users/${record.uid}`).get();
+  if (!snap.exists || snap.get("signIn") !== "email_otp") {
+    throw new HttpsError("not-found", "That email is not set up for a sign-in code.");
+  }
+  if (record.disabled || snap.get("active") !== true) {
+    throw new HttpsError("permission-denied", "This account has been revoked.");
+  }
+  const role = snap.get("role");
+  if (!isRole(role)) throw new HttpsError("failed-precondition", "This account has no role.");
+  return { uid: record.uid, role };
+}
+
 export const createUserAccount = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   const body = asObject(request.data);
   const email = String(body.email ?? "").trim().toLowerCase();
   const displayName = String(body.displayName ?? "").trim();
-  const password = String(body.password ?? "");
+  const signIn = body.signIn;
   const role = body.role;
-  const requirePasswordChange = body.requirePasswordChange !== false;
   if (!validEmail(email)) throw new HttpsError("invalid-argument", "Enter a valid email.");
   if (displayName.length < 1 || displayName.length > 80) {
     throw new HttpsError("invalid-argument", "Enter a name.");
   }
-  const problem = validatePassword(password);
-  if (problem) throw new HttpsError("invalid-argument", problem);
+  if (!isNewSignInMethod(signIn)) {
+    throw new HttpsError("invalid-argument", "Choose Gmail or an email code.");
+  }
   if (!isRole(role)) throw new HttpsError("invalid-argument", "Choose a role.");
   const settings = await readSettings();
   try {
@@ -186,9 +234,21 @@ export const createUserAccount = onCall(callable, async (request) => {
   } catch (error) {
     authz(error);
   }
+  await assertEmailFree(email);
+  if (signIn === "google") {
+    await db.doc(`invites/${email}`).set({
+      email,
+      displayName,
+      role,
+      signIn: "google",
+      createdBy: caller.uid,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { invited: true };
+  }
   let created: { uid: string };
   try {
-    created = await auth.createUser({ email, password, displayName, disabled: false });
+    created = await auth.createUser({ email, displayName, disabled: false });
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "auth/email-already-exists") {
@@ -197,22 +257,119 @@ export const createUserAccount = onCall(callable, async (request) => {
     throw error;
   }
   const now = new Date();
-  const changedAt = requirePasswordChange ? new Date(0) : now;
   await db.doc(`users/${created.uid}`).set({
     email,
     displayName,
     role,
+    signIn: "email_otp",
     active: true,
     protected: false,
     otpVerified: false,
     onShift: false,
-    passwordChangedAt: Timestamp.fromDate(changedAt),
-    passwordExpiresAt: Timestamp.fromDate(expiresAt(changedAt, settings.passwordMaxAgeDays)),
+    passwordChangedAt: Timestamp.fromDate(now),
+    passwordExpiresAt: Timestamp.fromDate(expiresAt(now, settings.passwordMaxAgeDays)),
     createdAt: FieldValue.serverTimestamp(),
     createdBy: caller.uid,
   });
   await auth.setCustomUserClaims(created.uid, { role, active: true, otpVerified: false });
   return { uid: created.uid };
+});
+
+export const removeInvite = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  if (caller.role !== "super_admin" || !caller.protected) {
+    throw new HttpsError("permission-denied", "Only the super admin can remove an invite.");
+  }
+  const email = String(asObject(request.data).email ?? "").trim().toLowerCase();
+  if (!validEmail(email)) throw new HttpsError("invalid-argument", "Choose an invite.");
+  const ref = db.doc(`invites/${email}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "That invite was not found.");
+  await ref.delete();
+  return { removed: true };
+});
+
+export const acceptGoogleSignIn = onCall(callable, async (request) => {
+  const uid = requireAuth(request);
+  const record = await auth.getUser(uid);
+  const email = String(record.email || "").trim().toLowerCase();
+  const google = record.providerData.some((provider) => provider.providerId === "google.com");
+  if (!google || !email || record.emailVerified !== true) {
+    throw new HttpsError("failed-precondition", "Sign in with Gmail to join.");
+  }
+  const userRef = db.doc(`users/${uid}`);
+  const inviteRef = db.doc(`invites/${email}`);
+  const joined = await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    if (userSnap.exists) {
+      if (userSnap.get("active") !== true) {
+        throw new HttpsError("permission-denied", "This account has been revoked.");
+      }
+      return { role: String(userSnap.get("role") || ""), already: true };
+    }
+    const inviteSnap = await tx.get(inviteRef);
+    if (!inviteSnap.exists || inviteSnap.get("signIn") !== "google") {
+      throw new HttpsError("permission-denied", "You are not on the HammondCare team.");
+    }
+    const role = inviteSnap.get("role");
+    if (!isRole(role) || role === "super_admin") {
+      throw new HttpsError("failed-precondition", "That invite is not valid.");
+    }
+    const displayName = String(inviteSnap.get("displayName") || record.displayName || email).slice(0, 80);
+    const now = Timestamp.now();
+    tx.set(userRef, {
+      email,
+      displayName,
+      role,
+      signIn: "google",
+      active: true,
+      protected: false,
+      otpVerified: true,
+      onShift: false,
+      passwordChangedAt: now,
+      passwordExpiresAt: Timestamp.fromDate(expiresAt(now.toDate(), 730)),
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: String(inviteSnap.get("createdBy") || ""),
+    });
+    tx.delete(inviteRef);
+    return { role, already: false, displayName };
+  });
+  if (!joined.already && joined.displayName) {
+    await auth.updateUser(uid, { displayName: joined.displayName });
+  }
+  if (isRole(joined.role)) {
+    await auth.setCustomUserClaims(uid, { role: joined.role, active: true, otpVerified: true });
+  }
+  return { joined: true };
+});
+
+export const requestSignInCode = onCall(callable, async (request) => {
+  const email = String(asObject(request.data).email ?? "").trim().toLowerCase();
+  const account = await emailCodeAccount(email);
+  return issueSignInCode(account.uid, email);
+});
+
+export const verifySignInCode = onCall(callable, async (request) => {
+  const body = asObject(request.data);
+  const email = String(body.email ?? "").trim().toLowerCase();
+  const code = normalizeOtp(String(body.code ?? ""));
+  if (!/^\d{6}$/.test(code)) throw new HttpsError("invalid-argument", "Enter the 6-digit code.");
+  const account = await emailCodeAccount(email);
+  const ref = db.doc(`private/otp/challenges/${account.uid}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("failed-precondition", "Request a code first.");
+  const challenge = snap.data() as OtpChallenge;
+  const result = checkOtpCode(challenge, account.uid, code, Date.now(), pepper());
+  if (!result.ok) {
+    await ref.update({ attempts: result.attempts });
+    throw new HttpsError("invalid-argument", result.reason);
+  }
+  await db.doc(`users/${account.uid}`).update({ otpVerified: true });
+  await auth.updateUser(account.uid, { emailVerified: true });
+  await auth.setCustomUserClaims(account.uid, { role: account.role, active: true, otpVerified: true });
+  await ref.delete();
+  const token = await auth.createCustomToken(account.uid);
+  return { token };
 });
 
 export const updateUserAccount = onCall(callable, async (request) => {
@@ -312,6 +469,7 @@ export const updateAppSettings = onCall(callable, async (request) => {
   const users = await db.collection("users").get();
   await Promise.all(
     users.docs.map((doc) => {
+      if (normalizeSignIn(doc.get("signIn")) !== "password") return Promise.resolve();
       const changed = doc.get("passwordChangedAt")?.toDate?.() ?? new Date(0);
       return doc.ref.update({
         passwordExpiresAt: Timestamp.fromDate(expiresAt(changed, passwordMaxAgeDays)),

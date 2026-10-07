@@ -5,6 +5,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { DEFAULT_TIMEZONE } from "./logic/password";
 import { isRole, type Role } from "./logic/roles";
+import { normalizeSignIn, type SignInMethod } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, type ColorSchemeId } from "./logic/themes";
 
 if (getApps().length === 0) initializeApp();
@@ -17,6 +18,7 @@ export type UserRecordData = {
   email: string;
   displayName: string;
   role: Role;
+  signIn: SignInMethod;
   active: boolean;
   protected: boolean;
   otpVerified: boolean;
@@ -64,6 +66,7 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
     email: String(data.email || ""),
     displayName: String(data.displayName || ""),
     role: data.role,
+    signIn: normalizeSignIn(data.signIn),
     active: data.active === true,
     protected: data.protected === true,
     otpVerified: data.otpVerified === true,

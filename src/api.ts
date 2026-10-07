@@ -23,6 +23,10 @@ export function authError(error: unknown): string {
   }
   if (code === "auth/user-disabled") return "This account has been revoked.";
   if (code === "auth/too-many-requests") return "Too many attempts. Wait and try again.";
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return "Sign-in was cancelled.";
+  if (code === "auth/account-exists-with-different-credential") {
+    return "That email already uses a password. Sign in with the password instead.";
+  }
   return errorText(error);
 }
 

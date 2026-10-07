@@ -1,9 +1,11 @@
 rules_version = '2';
 
 // HomeCare access control.
-// A signed-in token is not enough. The live user profile must be active,
-// OTP-verified, and inside its password window. Revocation flips `active`
-// to false, so an existing token fails these rules immediately.
+// A signed-in token is not enough. The live user profile must be active
+// and OTP-verified. Password accounts must also be inside the password
+// window. Gmail and email-code accounts do not expire a password.
+// Revocation flips `active` to false, so an existing token fails these
+// rules immediately.
 // Clients cannot create accounts, change roles, or write the super-admin flag.
 // The super admin is `protected: true` and role `super_admin`, and no client
 // write can change that document except their own on-shift toggle.
@@ -26,12 +28,17 @@ service cloud.firestore {
       return get(userPath(request.auth.uid)).data;
     }
 
+    function passwordWindowOk() {
+      return me().signIn == 'google'
+        || me().signIn == 'email_otp'
+        || (me().passwordExpiresAt is timestamp && request.time < me().passwordExpiresAt);
+    }
+
     function isActiveUser() {
       return profileExists()
         && me().active == true
         && me().otpVerified == true
-        && me().passwordExpiresAt is timestamp
-        && request.time < me().passwordExpiresAt;
+        && passwordWindowOk();
     }
 
     function role() {
@@ -141,6 +148,11 @@ service cloud.firestore {
 
     match /settings/{id} {
       allow read: if isActiveUser() && id == 'app';
+      allow write: if false;
+    }
+
+    match /invites/{emailId} {
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
 

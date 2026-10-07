@@ -97,6 +97,21 @@ beforeEach(async () => {
       role: "admin",
       passwordExpiresAt: past(),
     });
+    await setDoc(doc(db, "users/gmail"), {
+      ...base,
+      email: "gmail@example.com",
+      displayName: "Gmail",
+      role: "care_provider",
+      signIn: "google",
+      passwordExpiresAt: past(),
+    });
+    await setDoc(doc(db, "invites/pending@example.com"), {
+      email: "pending@example.com",
+      displayName: "Pending",
+      role: "care_provider",
+      signIn: "google",
+      createdBy: "super",
+    });
     await setDoc(doc(db, "groupThread/main"), {
       type: "group",
       title: "Everyone",
@@ -307,6 +322,22 @@ describe("security rules", () => {
         ),
       ),
     );
+  });
+
+  it("lets a Gmail account in after a password window and keeps invites server-only", async () => {
+    await assertSucceeds(getDoc(doc(dbFor("gmail"), "medications/x")));
+    await assertSucceeds(getDoc(doc(dbFor("super"), "invites/pending@example.com")));
+    await assertFails(getDoc(doc(dbFor("admin"), "invites/pending@example.com")));
+    await assertFails(getDoc(doc(dbFor("pat"), "invites/pending@example.com")));
+    await assertFails(
+      setDoc(doc(dbFor("super"), "invites/other@example.com"), {
+        email: "other@example.com",
+        displayName: "Other",
+        role: "care_provider",
+        signIn: "google",
+      }),
+    );
+    await assertFails(deleteDoc(doc(dbFor("super"), "invites/pending@example.com")));
   });
 
   it("flips access off as soon as the profile is marked inactive", async () => {

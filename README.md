@@ -1,6 +1,6 @@
 # HammondCare
 
-Private family care app for a small team. Each person has their own email and password. Care data lives in Firestore and is allowed only by security rules.
+Private family care app for a small team. Each person has their own sign-in. New people use Gmail or an email code, so nobody has to invent a starting password. The super admin keeps an email and password. Care data lives in Firestore and is allowed only by security rules.
 
 ## Decisions locked for this build
 
@@ -30,7 +30,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 6. One group thread and one-to-one threads.
 7. Admin-managed how-to guides.
 
-Password changes are required on a schedule. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings also holds the color scheme: Forest, Night, Ocean, or Clay. Everyone sees the saved scheme. The first sign-in also requires a 6-digit code emailed to that person.
+When the super admin adds a person, they choose Gmail or Email code. Gmail writes an invite and creates the account the first time that Gmail address signs in. Email code creates the account with no password; each sign-in sends a 6-digit code. Password changes stay on a schedule for password accounts only, including the super admin. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings also holds the color scheme: Forest, Night, Ocean, or Clay. Everyone sees the saved scheme. A password account still confirms the email with a 6-digit code on first sign-in.
 
 ## Install on a phone
 
@@ -71,7 +71,7 @@ The live project is [hammondcare-ce36f](https://console.firebase.google.com/proj
 
 The web app is registered. Firestore is created in `nam5`. The public web config is in `.env.example`. Copy it to `.env.production` before a production build.
 
-Cloud Functions and email/password sign-in on this project require the Blaze plan. Upgrade billing, then turn on Authentication with email and password. Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) for the functions. `HOMECARE_WEB_API_KEY` must match the web API key so password changes can check the current password. Firebase rejects environment names that start with `FIREBASE_`.
+Cloud Functions and Authentication on this project require the Blaze plan. Turn on email/password (for the super admin) and Google (for Gmail people). Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, and `SUPER_ADMIN_PASSWORD`. Email codes need SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) on the functions. Gmail sign-in does not use SMTP. Until those SMTP values are set, an email-code sign-in returns “Email is not configured on the server.” `HOMECARE_WEB_API_KEY` must match the web API key so password changes can check the current password. Firebase rejects environment names that start with `FIREBASE_`.
 
 ```bash
 npx firebase login

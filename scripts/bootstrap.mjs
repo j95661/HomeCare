@@ -75,6 +75,7 @@ async function ensureUser({ email: userEmail, password: userPassword, displayNam
       role,
       active: true,
       protected: protectedAccount,
+      signIn: existing.exists && existing.get("signIn") ? existing.get("signIn") : "password",
       otpVerified,
       onShift,
       passwordChangedAt,

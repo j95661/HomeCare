@@ -37,9 +37,18 @@ export type Person = {
   email: string;
   displayName: string;
   role: Role;
+  signIn?: "password" | "google" | "email_otp";
   active: boolean;
   protected: boolean;
   onShift: boolean;
+};
+
+export type Invite = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  signIn: "google";
 };
 
 export type Medication = {

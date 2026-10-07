@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
+import {
+  getRedirectResult,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithCustomToken,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  type User,
+} from "firebase/auth";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { authError, call, errorText } from "./api";
 import { auth, db } from "./firebase";
@@ -79,6 +89,16 @@ export function App() {
 
   const load = useCallback(async (user: User) => {
     try {
+      const google = user.providerData.some((provider) => provider.providerId === "google.com");
+      if (google) {
+        try {
+          await call("acceptGoogleSignIn");
+        } catch (error) {
+          await signOut(auth);
+          setGate({ kind: "signedOut", notice: errorText(error) });
+          return;
+        }
+      }
       const state = await call<SessionPayload>("getSessionState");
       if (!state.active) {
         await signOut(auth);
@@ -113,6 +133,12 @@ export function App() {
   }, []);
 
   loadRef.current = load;
+
+  useEffect(() => {
+    void getRedirectResult(auth).catch((error) => {
+      setGate((current) => (current.kind === "signedOut" ? { kind: "signedOut", notice: authError(error) } : current));
+    });
+  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(auth, (user) => {
@@ -274,13 +300,69 @@ export function App() {
   );
 }
 
+function prefersGoogleRedirect(): boolean {
+  const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    ("standalone" in navigator && (navigator as { standalone?: boolean }).standalone === true);
+  return mobile || standalone;
+}
+
 function LoginScreen({ notice }: { notice?: string }) {
+  const [panel, setPanel] = useState<"choose" | "code" | "password">("choose");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function submit(event: FormEvent) {
+  async function signInWithGmail() {
+    setBusy(true);
+    setError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      if (prefersGoogleRedirect()) await signInWithRedirect(auth, provider);
+      else await signInWithPopup(auth, provider);
+    } catch (err) {
+      setError(authError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendCode(event?: FormEvent) {
+    event?.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await call<{ sent: boolean; devCode?: string }>("requestSignInCode", { email: email.trim() });
+      setCodeSent(true);
+      setDevCode(result.devCode || "");
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCode(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await call<{ token: string }>("verifySignInCode", { email: email.trim(), code });
+      await signInWithCustomToken(auth, result.token);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPassword(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError("");
@@ -294,21 +376,74 @@ function LoginScreen({ notice }: { notice?: string }) {
   }
 
   return (
-    <form className="stack" onSubmit={(event) => void submit(event)}>
+    <div className="stack">
       <h1>Sign in</h1>
       {notice ? <Notice>{notice}</Notice> : null}
-      <Field label="Email">
-        <input data-testid="login-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
-      </Field>
-      <Field label="Password">
-        <input data-testid="login-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-      </Field>
-      {error ? <Notice>{error}</Notice> : null}
-      <button className="primary" data-testid="login-submit" disabled={busy} type="submit">
-        Sign in
-      </button>
-      <p className="hint">Each person uses their own email and password.</p>
-    </form>
+      {panel === "choose" ? (
+        <>
+          <button className="primary" type="button" data-testid="login-gmail" disabled={busy} onClick={() => void signInWithGmail()}>
+            Sign in with Gmail
+          </button>
+          <button type="button" data-testid="login-code" onClick={() => { setPanel("code"); setError(""); }}>
+            Email code
+          </button>
+          <button type="button" data-testid="login-password-mode" onClick={() => { setPanel("password"); setError(""); }}>
+            Password
+          </button>
+          <p className="hint">New people use Gmail or an email code. The super admin uses a password.</p>
+        </>
+      ) : null}
+      {panel === "code" ? (
+        <form className="stack" onSubmit={(event) => void (codeSent ? verifyCode(event) : sendCode(event))}>
+          <Field label="Email">
+            <input data-testid="login-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </Field>
+          {codeSent ? (
+            <>
+              <p className="hint">A 6-digit code was sent to {email.trim()}.</p>
+              {devCode ? (
+                <p className="notice" data-testid="dev-otp">
+                  Emulator code: {devCode}
+                </p>
+              ) : null}
+              <Field label="6-digit code">
+                <input data-testid="otp-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required />
+              </Field>
+            </>
+          ) : null}
+          {error ? <Notice>{error}</Notice> : null}
+          <button className="primary" data-testid="login-submit" disabled={busy} type="submit">
+            {codeSent ? "Verify code" : "Send code"}
+          </button>
+          {codeSent ? (
+            <button type="button" disabled={busy} onClick={() => void sendCode()}>
+              Send a new code
+            </button>
+          ) : null}
+          <button type="button" onClick={() => { setPanel("choose"); setError(""); setCodeSent(false); }}>
+            Back
+          </button>
+        </form>
+      ) : null}
+      {panel === "password" ? (
+        <form className="stack" onSubmit={(event) => void submitPassword(event)}>
+          <Field label="Email">
+            <input data-testid="login-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </Field>
+          <Field label="Password">
+            <input data-testid="login-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+          </Field>
+          {error ? <Notice>{error}</Notice> : null}
+          <button className="primary" data-testid="login-submit" disabled={busy} type="submit">
+            Sign in
+          </button>
+          <button type="button" onClick={() => { setPanel("choose"); setError(""); }}>
+            Back
+          </button>
+        </form>
+      ) : null}
+      {panel === "choose" && error ? <Notice>{error}</Notice> : null}
+    </div>
   );
 }
 

@@ -19,7 +19,7 @@ import { canDeleteActivities, canManageGuides, canReviewLogs, isSuperAdmin, role
 import { applyTheme, COLOR_SCHEMES } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
-import type { Activity, Guide, GuideStep, MedLog, Person, Role, RouteState } from "../types";
+import type { Activity, Guide, GuideStep, Invite, MedLog, Person, Role, RouteState } from "../types";
 
 export function ActivitiesScreen() {
   const session = useSession();
@@ -304,14 +304,20 @@ export function MedLogScreen() {
   );
 }
 
+function signInLabel(signIn?: string): string {
+  if (signIn === "google") return "Gmail";
+  if (signIn === "email_otp") return "Email code";
+  return "Password";
+}
+
 export function PeopleScreen() {
   const session = useSession();
   const [people, setPeople] = useState<Person[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [signIn, setSignIn] = useState<"google" | "email_otp">("google");
   const [role, setRole] = useState<Role>("care_provider");
-  const [requirePasswordChange, setRequirePasswordChange] = useState(true);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -327,14 +333,25 @@ export function PeopleScreen() {
     );
   }, [session]);
 
+  useEffect(() => {
+    if (!isSuperAdmin(session.role)) return;
+    return onSnapshot(
+      collection(db, "invites"),
+      (snap) => setInvites(snap.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Invite, "id">) }))),
+      (err) => {
+        if (isPermissionDenied(err)) session.onDenied();
+        else setError(errorText(err));
+      },
+    );
+  }, [session]);
+
   async function createAccount() {
     setBusy(true);
     setError("");
     try {
-      await call("createUserAccount", { displayName, email, password, role, requirePasswordChange });
+      await call("createUserAccount", { displayName, email, role, signIn });
       setDisplayName("");
       setEmail("");
-      setPassword("");
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -348,6 +365,18 @@ export function PeopleScreen() {
       await call("updateUserAccount", { uid: person.id, displayName: nextName, role: nextRole });
     } catch (err) {
       setError(errorText(err));
+    }
+  }
+
+  async function removeInvite(address: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await call("removeInvite", { email: address });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -371,29 +400,51 @@ export function PeopleScreen() {
       <h2>People</h2>
       <section className="panel">
         <Field label="Name">
-          <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          <input data-testid="people-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
         </Field>
         <Field label="Email">
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" />
+          <input data-testid="people-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" />
         </Field>
-        <Field label="Temporary password">
-          <input type="text" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
-        </Field>
+        <fieldset className="schemes">
+          <legend>Sign-in</legend>
+          <button type="button" className={signIn === "google" ? "primary" : ""} data-testid="signin-google" onClick={() => setSignIn("google")}>
+            Gmail
+          </button>
+          <button type="button" className={signIn === "email_otp" ? "primary" : ""} data-testid="signin-email" onClick={() => setSignIn("email_otp")}>
+            Email code
+          </button>
+        </fieldset>
+        <p className="hint">
+          {signIn === "google"
+            ? "They sign in with Gmail. No password is set."
+            : "They sign in with a 6-digit code emailed to them. No password is set."}
+        </p>
         <Field label="Role">
-          <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
+          <select data-testid="people-role" value={role} onChange={(event) => setRole(event.target.value as Role)}>
             <option value="admin">Admin</option>
             <option value="team_lead">Team lead</option>
             <option value="care_provider">Care provider</option>
           </select>
         </Field>
-        <label className="check">
-          <input type="checkbox" checked={requirePasswordChange} onChange={(event) => setRequirePasswordChange(event.target.checked)} />
-          Require a new password at first login
-        </label>
-        <button type="button" className="primary" disabled={busy} onClick={() => void createAccount()}>
-          Create account
+        <button type="button" className="primary" data-testid="people-create" disabled={busy} onClick={() => void createAccount()}>
+          Add person
         </button>
       </section>
+      {invites.length > 0 ? (
+        <ul className="list">
+          {invites.map((invite) => (
+            <li key={invite.id} className="card" data-testid="pending-invite">
+              <strong>{invite.displayName}</strong>
+              <p className="meta">
+                {invite.email} · {roleLabel(invite.role)} · Waiting to sign in with Gmail
+              </p>
+              <button type="button" disabled={busy} onClick={() => void removeInvite(invite.email || invite.id)}>
+                Remove invite
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <ul className="list">
         {people.map((person) => (
           <PersonRow
@@ -434,7 +485,7 @@ function PersonRow({
     <li className="card">
       <strong>{person.displayName}</strong>
       <p className="meta">
-        {person.email} · {roleLabel(person.role)}
+        {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
         {locked ? " · Protected" : ""}
       </p>
