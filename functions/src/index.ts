@@ -20,6 +20,7 @@ import { sendVisiblePush, unsubscribeTokens } from "./notify";
 import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
 import { assertTimezone, expiresAt, isPasswordExpired, validatePassword } from "./logic/password";
+import { isColorScheme } from "./logic/themes";
 import { isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
@@ -80,6 +81,7 @@ export const getSessionState = onCall(callable, async (request) => {
     passwordMaxAgeDays: settings.passwordMaxAgeDays,
     timezone: settings.timezone,
     snoozeMinutes: settings.snoozeMinutes,
+    colorScheme: settings.colorScheme,
   };
 });
 
@@ -291,6 +293,7 @@ export const updateAppSettings = onCall(callable, async (request) => {
   const passwordMaxAgeDays = Number(body.passwordMaxAgeDays);
   const snoozeMinutes = Number(body.snoozeMinutes);
   const timezone = String(body.timezone ?? "");
+  const colorScheme = String(body.colorScheme ?? "forest");
   if (!Number.isInteger(passwordMaxAgeDays) || passwordMaxAgeDays < 1 || passwordMaxAgeDays > 730) {
     throw new HttpsError("invalid-argument", "Password interval must be a whole number of days from 1 to 730.");
   }
@@ -302,7 +305,10 @@ export const updateAppSettings = onCall(callable, async (request) => {
   } catch {
     throw new HttpsError("invalid-argument", "Choose a valid timezone.");
   }
-  await db.doc("settings/app").update({ passwordMaxAgeDays, snoozeMinutes, timezone });
+  if (!isColorScheme(colorScheme)) {
+    throw new HttpsError("invalid-argument", "Choose a color scheme.");
+  }
+  await db.doc("settings/app").update({ passwordMaxAgeDays, snoozeMinutes, timezone, colorScheme });
   const users = await db.collection("users").get();
   await Promise.all(
     users.docs.map((doc) => {

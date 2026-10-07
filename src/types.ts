@@ -29,6 +29,7 @@ export type Session = {
   timezone: string;
   snoozeMinutes: number;
   passwordMaxAgeDays: number;
+  colorScheme: string;
 };
 
 export type Person = {

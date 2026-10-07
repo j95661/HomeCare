@@ -16,6 +16,7 @@ import { db } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canDeleteActivities, canManageGuides, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
+import { applyTheme, COLOR_SCHEMES } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
 import type { Activity, Guide, GuideStep, MedLog, Person, Role, RouteState } from "../types";
@@ -472,6 +473,7 @@ export function SettingsScreen() {
   const [days, setDays] = useState(String(session.passwordMaxAgeDays));
   const [timezone, setTimezone] = useState(session.timezone);
   const [snooze, setSnooze] = useState(String(session.snoozeMinutes));
+  const [scheme, setScheme] = useState(session.colorScheme || "forest");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -483,11 +485,16 @@ export function SettingsScreen() {
         setDays(String(snap.get("passwordMaxAgeDays") ?? session.passwordMaxAgeDays));
         setTimezone(String(snap.get("timezone") ?? session.timezone));
         setSnooze(String(snap.get("snoozeMinutes") ?? session.snoozeMinutes));
+        setScheme(String(snap.get("colorScheme") || session.colorScheme || "forest"));
         setEmail(String(snap.get("superAdminEmail") ?? ""));
       },
       (err) => setError(isPermissionDenied(err) ? "" : errorText(err)),
     );
-  }, [session.passwordMaxAgeDays, session.snoozeMinutes, session.timezone]);
+  }, [session.passwordMaxAgeDays, session.snoozeMinutes, session.timezone, session.colorScheme]);
+
+  useEffect(() => {
+    applyTheme(scheme);
+  }, [scheme]);
 
   async function save() {
     setSaved(false);
@@ -497,6 +504,7 @@ export function SettingsScreen() {
         passwordMaxAgeDays: Number(days),
         timezone,
         snoozeMinutes: Number(snooze),
+        colorScheme: scheme,
       });
       setSaved(true);
     } catch (err) {
@@ -519,6 +527,21 @@ export function SettingsScreen() {
       <Field label="Snooze minutes">
         <input inputMode="numeric" value={snooze} onChange={(event) => setSnooze(event.target.value)} />
       </Field>
+      <fieldset className="schemes">
+        <legend>Color scheme</legend>
+        {COLOR_SCHEMES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            data-testid={`scheme-${item.id}`}
+            className={scheme === item.id ? "primary" : ""}
+            onClick={() => setScheme(item.id)}
+          >
+            <span className="swatch" style={{ background: item.accent }} />
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
       <button type="button" className="primary" onClick={() => void save()}>
         Save settings
       </button>

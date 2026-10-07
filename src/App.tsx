@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { authError, call, errorText } from "./api";
 import { auth, db } from "./firebase";
 import { Field, Notice } from "./components";
@@ -10,6 +10,7 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
+import { applyTheme } from "./themes";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
 type Gate =
@@ -31,6 +32,7 @@ type SessionPayload = {
   passwordMaxAgeDays: number;
   timezone: string;
   snoozeMinutes: number;
+  colorScheme: string;
 };
 
 const VIEWS = new Set<ViewName>([
@@ -102,6 +104,7 @@ export function App() {
           timezone: state.timezone,
           snoozeMinutes: state.snoozeMinutes,
           passwordMaxAgeDays: state.passwordMaxAgeDays,
+          colorScheme: state.colorScheme || "forest",
         },
       });
     } catch (error) {
@@ -129,6 +132,16 @@ export function App() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  useEffect(() => {
+    if (gate.kind !== "app") {
+      applyTheme("forest");
+      return;
+    }
+    return onSnapshot(doc(db, "settings/app"), (snap) => {
+      applyTheme(String(snap.get("colorScheme") || "forest"));
+    });
+  }, [gate.kind]);
 
   useEffect(() => {
     if (gate.kind !== "app") return;

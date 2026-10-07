@@ -10,11 +10,55 @@
   --warn: #8a2b12;
   --muted: #3d3d3d;
   --focus: #0b57d0;
+  --mine: #e7f2ec;
   font-family: system-ui, "Segoe UI", sans-serif;
   font-size: 18px;
   line-height: 1.35;
   color: var(--ink);
   background: var(--bg);
+}
+
+[data-theme="night"] {
+  color-scheme: dark;
+  --bg: #121816;
+  --ink: #f4f1ea;
+  --panel: #1c2622;
+  --line: #4d6358;
+  --accent: #1f6b52;
+  --ok: #1f8a4d;
+  --off: #a86b2d;
+  --warn: #e07a5f;
+  --muted: #d5d0c6;
+  --focus: #8ab4f8;
+  --mine: #24352e;
+}
+
+[data-theme="ocean"] {
+  --bg: #eef3f7;
+  --ink: #10202c;
+  --panel: #ffffff;
+  --line: #b7c6d4;
+  --accent: #0b3a5b;
+  --ok: #0c6b3a;
+  --off: #6b3f10;
+  --warn: #8a2b12;
+  --muted: #3d4a55;
+  --focus: #0b57d0;
+  --mine: #e3eef6;
+}
+
+[data-theme="clay"] {
+  --bg: #f6efe8;
+  --ink: #1c1410;
+  --panel: #fffaf6;
+  --line: #d7c4b4;
+  --accent: #7a3418;
+  --ok: #0c6b3a;
+  --off: #6b3f10;
+  --warn: #8a2b12;
+  --muted: #4a3b32;
+  --focus: #0b57d0;
+  --mine: #f3e4d8;
 }
 
 * { box-sizing: border-box; }
@@ -53,7 +97,7 @@ input, select, textarea {
   padding: 10px 12px;
   border: 2px solid var(--ink);
   border-radius: 12px;
-  background: #fff;
+  background: var(--panel);
 }
 
 textarea { min-height: 96px; }
@@ -110,7 +154,7 @@ h2 { font-size: 1.25rem; }
   padding: 12px;
 }
 .card.pinned { border-color: var(--accent); }
-.card.mine { background: #e7f2ec; }
+.card.mine { background: var(--mine); }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .list button { text-align: left; }
 
@@ -120,7 +164,7 @@ h2 { font-size: 1.25rem; }
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--panel);
   border: 2px solid var(--ink);
 }
 .notice.error, .notice[role="alert"] { border-color: var(--warn); color: var(--warn); }
@@ -169,10 +213,28 @@ h2 { font-size: 1.25rem; }
   align-items: end;
   z-index: 5;
 }
+.schemes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.schemes legend { font-weight: 700; margin-bottom: 8px; }
+.schemes button { display: flex; align-items: center; gap: 12px; text-align: left; }
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #141414;
+  flex: none;
+}
+
 .modal {
   width: min(560px, 100%);
   margin: 0 auto;
-  background: #fff;
+  background: var(--panel);
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
   border-radius: 16px 16px 0 0;
   display: grid;

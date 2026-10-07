@@ -30,7 +30,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 6. One group thread and one-to-one threads.
 7. Admin-managed how-to guides.
 
-Password changes are required on a schedule. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. The first sign-in also requires a 6-digit code emailed to that person.
+Password changes are required on a schedule. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings also holds the color scheme: Forest, Night, Ocean, or Clay. Everyone sees the saved scheme. The first sign-in also requires a 6-digit code emailed to that person.
 
 ## Install on a phone
 
