@@ -41,6 +41,7 @@ export type Person = {
   id: string;
   email: string;
   displayName: string;
+  phone?: string;
   role: Role;
   emoji?: string;
   signIn?: "password" | "google" | "email_otp";
