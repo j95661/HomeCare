@@ -50,14 +50,14 @@ export function MedsScreen() {
       setError(VIEW_CHANGE);
       return;
     }
-    if (!form.name.trim() || !form.frequency.trim() || form.times.length === 0) {
-      setError("Add a name, how often, and at least one time.");
+    if (!form.name.trim() || form.times.length === 0) {
+      setError("Add a name and at least one time.");
       return;
     }
     const payload = {
       name: form.name.trim(),
       dose: form.dose.trim(),
-      frequency: form.frequency.trim(),
+      frequency: form.frequency.trim() || "Daily",
       times: form.times,
       careNotes: form.careNotes.trim(),
       active: form.active,
@@ -90,9 +90,6 @@ export function MedsScreen() {
           </Field>
           <Field label="Dose">
             <input value={form.dose} onChange={(event) => setForm({ ...form, dose: event.target.value })} />
-          </Field>
-          <Field label="How often">
-            <input value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value })} />
           </Field>
           <div className="field">
             <span>Times</span>
@@ -149,7 +146,7 @@ export function MedsScreen() {
             <li key={med.id} className="card" data-testid="med-card" data-name={med.name}>
               <strong>{med.name}</strong>
               {!med.active ? <span className="badge">Inactive</span> : null}
-              <p>{[med.dose, med.frequency].filter(Boolean).join(" · ")}</p>
+              {med.dose ? <p>{med.dose}</p> : null}
               <p>{med.times.map((time) => formatClock(time)).join(", ")}</p>
               {med.careNotes ? <p>{med.careNotes}</p> : null}
               {manage ? (
