@@ -50,6 +50,11 @@ export function monthGrid(iso: string): { date: string; inMonth: boolean }[] {
   });
 }
 
+export function formatMonth(iso: string): string {
+  const [year, month] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
 export function formatDay(iso: string): string {
   const [year, month, day] = iso.split("-").map(Number);
   return new Intl.DateTimeFormat(undefined, {

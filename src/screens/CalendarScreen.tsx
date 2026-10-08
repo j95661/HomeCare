@@ -12,7 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { errorText, isPermissionDenied } from "../api";
-import { withEmoji } from "../emoji";
+import { nameInitial, withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { canEditWeeklyPattern, isAccountEnabled } from "../roles";
@@ -22,6 +22,7 @@ import {
   dayExceptionLabel,
   exceptionFromData,
   exceptionLabel,
+  isAwayKind,
   isOpenTemplate,
   repeatingShiftGroups,
   resolveRange,
@@ -32,7 +33,7 @@ import {
   type ShiftTemplate,
 } from "../schedule";
 import { useSession } from "../session";
-import { addDays, addMonths, formatClock, formatDay, monthGrid, startOfWeek, todayISO } from "../time";
+import { addDays, addMonths, formatClock, formatDay, formatMonth, monthGrid, startOfWeek, todayISO } from "../time";
 import type { Person } from "../types";
 
 function rosterName(person: Person): string {
@@ -467,6 +468,7 @@ export function CalendarScreen() {
 
       {manage && mode === "month" ? (
         <div className="month">
+          <h2 className="month-name" data-testid="calendar-month">{formatMonth(anchor)}</h2>
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
             <span key={label} className="dow">
               {label}
@@ -475,6 +477,13 @@ export function CalendarScreen() {
           {monthGrid(anchor).map((cell) => {
             const dayShifts = shifts.filter((shift) => shift.date === cell.date);
             const mark = dayExceptionLabel(dayShifts);
+            const seen = new Set<string>();
+            const initials = dayShifts.flatMap((shift) => {
+              if (isAwayKind(shift.kind) || seen.has(shift.userId)) return [];
+              seen.add(shift.userId);
+              const person = people.find((item) => item.id === shift.userId);
+              return [nameInitial(person?.displayName || shift.userName)];
+            });
             return (
               <button
                 key={cell.date}
@@ -487,13 +496,17 @@ export function CalendarScreen() {
                   setMode("day");
                 }}
               >
-                {Number(cell.date.slice(8))}
+                <span className="day-number">{Number(cell.date.slice(8))}</span>
                 {mark ? (
                   <span className="exception-mark" data-testid="month-exception">
                     {mark}
                   </span>
                 ) : null}
-                {dayShifts.length > 0 ? <span className="count">{dayShifts.length}</span> : null}
+                {initials.length > 0 ? (
+                  <span className="month-initials" data-testid="month-initials">
+                    {initials.join(" ")}
+                  </span>
+                ) : null}
               </button>
             );
           })}
