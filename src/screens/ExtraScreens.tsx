@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   addDoc,
   collection,
@@ -681,21 +681,67 @@ export function SettingsScreen() {
   );
 }
 
+function CollapseSection({
+  title,
+  summary,
+  testId,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: ReactNode;
+  testId: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="panel">
+      <button type="button" className="collapse-toggle" data-testid={testId} aria-expanded={open} onClick={onToggle}>
+        <span className="collapse-title">{title}</span>
+        <span className="collapse-summary">
+          {summary}
+          <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        </span>
+      </button>
+      {open ? <div className="collapse-body stack">{children}</div> : null}
+    </section>
+  );
+}
+
+function schemeSummary(personal: string, teamId: string): { label: string; accent: string } {
+  const team = COLOR_SCHEMES.find((item) => item.id === teamId);
+  const teamAccent = team?.accent ?? "#7a2948";
+  if (!personal) return { label: team ? `Team · ${team.label}` : "Team default", accent: teamAccent };
+  const named = COLOR_SCHEMES.find((item) => item.id === personal);
+  if (named) return { label: named.label, accent: named.accent };
+  const custom = parseCustomColor(personal);
+  if (custom) return { label: custom, accent: custom };
+  return { label: team?.label ?? "Rose", accent: teamAccent };
+}
+
 function SchemePicker() {
   const session = useSession();
+  const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState(session.personalColorScheme || "team");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || "Rose";
+  const summary = schemeSummary(session.personalColorScheme, session.colorScheme);
 
   useEffect(() => {
     setChoice(session.personalColorScheme || "team");
   }, [session.personalColorScheme]);
 
   useEffect(() => {
+    if (!open) {
+      applyTheme(session.personalColorScheme || resolveColorScheme(session.colorScheme));
+      return;
+    }
     applyTheme(choice === "team" ? resolveColorScheme(session.colorScheme) : choice);
-  }, [choice, session.colorScheme]);
+  }, [open, choice, session.colorScheme, session.personalColorScheme]);
 
   async function save() {
     setBusy(true);
@@ -712,8 +758,25 @@ function SchemePicker() {
   }
 
   return (
-    <section className="panel">
-      <h2>Your color scheme</h2>
+    <CollapseSection
+      title="Your color scheme"
+      testId="theme-toggle"
+      open={open}
+      onToggle={() => {
+        setOpen((current) => {
+          if (current) setChoice(session.personalColorScheme || "team");
+          return !current;
+        });
+        setSaved(false);
+        setError("");
+      }}
+      summary={
+        <>
+          <span className="swatch" style={{ background: summary.accent }} />
+          {summary.label}
+        </>
+      }
+    >
       <p className="hint">This changes the colors on your screen only. Pick a named scheme, a chart color, or any shade.</p>
       <fieldset className="schemes">
         <legend>Color scheme</legend>
@@ -779,12 +842,13 @@ function SchemePicker() {
       </button>
       {saved ? <Notice tone="info">Saved.</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
-    </section>
+    </CollapseSection>
   );
 }
 
 function EmojiPicker() {
   const session = useSession();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const current = session.emoji && PROFILE_EMOJI.includes(session.emoji as (typeof PROFILE_EMOJI)[number]) ? session.emoji : "";
@@ -803,8 +867,13 @@ function EmojiPicker() {
   }
 
   return (
-    <section className="panel">
-      <h2>Your emoji</h2>
+    <CollapseSection
+      title="Your emoji"
+      testId="emoji-toggle"
+      open={open}
+      onToggle={() => setOpen((currentOpen) => !currentOpen)}
+      summary={<span className="collapse-mark">{current || nameInitial(session.displayName)}</span>}
+    >
       <p className="hint">Tap once. It shows next to your name. Leave it as your initial if you prefer.</p>
       <div className="emoji-grid choices">
         <button
@@ -833,7 +902,7 @@ function EmojiPicker() {
         ))}
       </div>
       {error ? <Notice>{error}</Notice> : null}
-    </section>
+    </CollapseSection>
   );
 }
 

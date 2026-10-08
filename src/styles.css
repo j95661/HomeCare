@@ -289,6 +289,35 @@ button.emoji {
   font-weight: 400;
   line-height: 1;
 }
+.panel button.collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 4px;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+.collapse-title {
+  font-family: Palatino, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.collapse-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.collapse-mark {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.collapse-body { margin-top: 12px; }
 .schemes {
   display: grid;
   gap: 8px;
