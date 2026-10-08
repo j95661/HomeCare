@@ -399,7 +399,7 @@ export function CalendarScreen() {
       ) : board === "mine" ? (
         <>
           <section className="panel" data-testid="my-repeating">
-            <h2>Repeating shift</h2>
+            <h2>My Schedule</h2>
             <p className="hint">This repeats every week. A swap, time off, or sick leave changes one date, and the team week shows it.</p>
             {myTemplates.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
             <ul className="list">
