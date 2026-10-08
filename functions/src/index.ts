@@ -34,7 +34,9 @@ import {
 } from "./logic/reminders";
 import {
   exceptionFromData,
+  isDuringShift,
   planCoverageWrite,
+  planShiftSync,
   promoteSwap,
   resolveDay,
   shiftKey,
@@ -442,6 +444,7 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
         protected: false,
         otpVerified: true,
         onShift: rosterSnap.get("onShift") === true,
+        shiftHold: rosterSnap.get("shiftHold") === true,
         passwordChangedAt: rosterSnap.get("passwordChangedAt") || now,
         passwordExpiresAt: rosterSnap.get("passwordExpiresAt") || Timestamp.fromDate(expiresAt(now.toDate(), 730)),
         createdAt: rosterSnap.get("createdAt") || FieldValue.serverTimestamp(),
@@ -698,7 +701,7 @@ const MED_ACTIONS = ["given", "declined", "missed", "snooze"] as const;
 export const logMedicationResponse = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   if (!caller.onShift) {
-    throw new HttpsError("failed-precondition", "Switch to on shift before logging a medication.");
+    throw new HttpsError("failed-precondition", "Turn on shift before logging a medication.");
   }
   const body = asObject(request.data);
   const medicationId = String(body.medicationId ?? "");
@@ -746,6 +749,40 @@ export const logMedicationResponse = onCall(callable, async (request) => {
   return { logged: true };
 });
 
+async function syncScheduledShifts(date: string, time: string): Promise<void> {
+  const [userSnap, templateSnap, exceptionSnap] = await Promise.all([
+    db.collection("users").get(),
+    db.collection("shiftTemplates").get(),
+    db.collection("shiftExceptions").where("date", "==", date).get(),
+  ]);
+  const templates = templateSnap.docs.map((item) => templateFromData(item.id, item.data() as Record<string, unknown>));
+  const exceptions = exceptionSnap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+  const resolved = resolveDay(date, templates, exceptions);
+  let batch = db.batch();
+  let pending = 0;
+  const commit = async () => {
+    if (!pending) return;
+    await batch.commit();
+    batch = db.batch();
+    pending = 0;
+  };
+  for (const userDoc of userSnap.docs) {
+    const onShift = userDoc.get("onShift") === true;
+    const shiftHold = userDoc.get("shiftHold") === true;
+    const scheduled = isDuringShift(time, resolved, userDoc.id);
+    const plan = planShiftSync({ onShift, shiftHold, scheduled });
+    if (!plan.write) continue;
+    const patch: { onShift?: boolean; shiftHold?: boolean } = {};
+    if (plan.onShift !== onShift) patch.onShift = plan.onShift;
+    if (plan.shiftHold !== shiftHold) patch.shiftHold = plan.shiftHold;
+    if (Object.keys(patch).length === 0) continue;
+    batch.update(userDoc.ref, patch);
+    pending += 1;
+    if (pending >= 400) await commit();
+  }
+  await commit();
+}
+
 async function loadActiveUsers(): Promise<Array<ReminderUser & { emoji: string }>> {
   const snap = await db.collection("users").get();
   return snap.docs.map((doc) => ({
@@ -763,6 +800,7 @@ async function loadActiveUsers(): Promise<Array<ReminderUser & { emoji: string }
 async function dispatchDueReminders(now = new Date()): Promise<number> {
   const settings = await readSettings();
   const zoned = zonedParts(now, settings.timezone);
+  await syncScheduledShifts(zoned.date, zoned.time);
   const medSnap = await db.collection("medications").where("active", "==", true).get();
   const medications: ReminderMed[] = medSnap.docs.map((doc) => ({
     id: doc.id,

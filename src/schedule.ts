@@ -230,3 +230,35 @@ export function promoteSwap(input: {
     },
   };
 }
+
+/** True when this person is the one working and the clock is inside start inclusive, end exclusive. */
+export function isDuringShift(
+  time: string,
+  shifts: { userId: string; start: string; end: string; kind: "" | "swap" | "day_off" }[],
+  userId: string,
+): boolean {
+  return shifts.some(
+    (shift) => shift.userId === userId && shift.kind !== "day_off" && shift.start <= time && time < shift.end,
+  );
+}
+
+/**
+ * Follow the schedule unless the person is holding the other status.
+ * The hold clears once the schedule matches what they chose.
+ */
+export function planShiftSync(input: { onShift: boolean; shiftHold: boolean; scheduled: boolean }): {
+  onShift: boolean;
+  shiftHold: boolean;
+  write: boolean;
+} {
+  if (input.shiftHold && input.scheduled === input.onShift) {
+    return { onShift: input.onShift, shiftHold: false, write: true };
+  }
+  if (input.shiftHold) {
+    return { onShift: input.onShift, shiftHold: true, write: false };
+  }
+  if (input.onShift !== input.scheduled) {
+    return { onShift: input.scheduled, shiftHold: false, write: true };
+  }
+  return { onShift: input.onShift, shiftHold: false, write: false };
+}

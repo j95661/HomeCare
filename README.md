@@ -25,7 +25,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 1. Pinned handover notes on the home screen.
 2. Day, week, and month schedule. A team lead sets each care provider’s repeating weekday shifts once. The calendar shows that weekly pattern with dated exceptions applied. A swap or a day off writes an exception for that date only and leaves the weekly pattern alone. On an accepted swap, a team lead can choose “Make this the new weekly pattern” so future weeks follow the new person. Exception days are marked on the calendar. The request keeps who asked, who accepted, and when.
 3. Medications with dose, frequency, times, and care notes. Reminders are visible and audible, and only go to people marked on shift. The prompt is Given, Declined, Missed, or Snooze. Every response is logged.
-4. On-shift / off-shift toggle. Off shift stops medication reminders for that person only. Messages and coverage requests still notify them.
+4. Shift status in the corner. It turns on during that person's scheduled hours and off when those hours end. Tapping the corner holds the other status until the schedule matches it again. Off shift stops medication reminders for that person only. Messages and coverage requests still notify them.
 5. Activities for things to do with Andrew. Anyone on the team can add or update. Admins can remove.
 6. A care-team thread for care providers and team leads, plus a message to one person. The sender or an admin can delete a message.
 7. Admin-managed how-to guides.

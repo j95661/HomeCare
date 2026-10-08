@@ -146,9 +146,20 @@ textarea { min-height: 96px; }
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 14px 16px;
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.top .shift-status {
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 68%;
+  min-height: 52px;
+  padding: 8px 12px;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .main {

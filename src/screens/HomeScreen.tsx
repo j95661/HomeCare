@@ -145,37 +145,6 @@ export function HomeScreen({ route, go }: Props) {
   return (
     <div className="stack">
       <section className="panel">
-        <h2>Shift</h2>
-        <div className="split">
-          <button
-            type="button"
-            className={session.onShift ? "on" : ""}
-            data-testid="shift-on"
-            onClick={() => {
-              void session.setOnShift(true).catch((err) => setError(errorText(err)));
-            }}
-          >
-            I'm on shift
-          </button>
-          <button
-            type="button"
-            className={!session.onShift ? "off" : ""}
-            data-testid="shift-off"
-            onClick={() => {
-              void session.setOnShift(false).catch((err) => setError(errorText(err)));
-            }}
-          >
-            I'm off shift
-          </button>
-        </div>
-        <p className="hint">
-          {session.onShift
-            ? "Medication reminders are on for you."
-            : "Medication reminders are off. Messages and shift swaps still come through."}
-        </p>
-      </section>
-
-      <section className="panel">
         <h2>Handover notes</h2>
         <Field label="What happened this shift?">
           <textarea
@@ -205,7 +174,7 @@ export function HomeScreen({ route, go }: Props) {
 
       <section className="panel">
         <h2>Today's medications</h2>
-        {!session.onShift ? <p className="hint">Switch on shift to respond and hear reminders.</p> : null}
+        {!session.onShift ? <p className="hint">Tap the shift status in the corner to respond and hear reminders.</p> : null}
         {meds.length === 0 ? <Empty>No medications yet.</Empty> : null}
         <ul className="list">
           {meds

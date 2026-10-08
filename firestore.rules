@@ -8,7 +8,7 @@ rules_version = '2';
 // rules immediately.
 // Clients cannot create accounts, change roles, or write the super-admin flag.
 // The super admin is `protected: true` and role `super_admin`, and no client
-// write can change that document except their own on-shift toggle.
+// write can change that document except their own shift status.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -61,6 +61,14 @@ service cloud.firestore {
 
     function isCareStaff() {
       return isActiveUser() && (role() == 'team_lead' || role() == 'care_provider');
+    }
+
+    function ownShiftUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.size() > 0
+        && changed.hasOnly(['onShift', 'shiftHold'])
+        && (!changed.hasAny(['onShift']) || request.resource.data.onShift is bool)
+        && (!changed.hasAny(['shiftHold']) || request.resource.data.shiftHold is bool);
     }
 
     function canMessageUser(uid) {
@@ -194,8 +202,7 @@ service cloud.firestore {
       allow create, delete: if false;
       allow update: if isActiveUser()
         && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['onShift'])
-        && request.resource.data.onShift is bool;
+        && ownShiftUpdate();
 
       match /devices/{deviceId} {
         allow read: if isActiveUser() && request.auth.uid == uid;
