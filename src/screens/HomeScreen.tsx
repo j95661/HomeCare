@@ -358,26 +358,21 @@ export function HomeScreen({ route, go }: Props) {
         </ul>
       </section>
 
-      <section className="panel" data-testid="medications">
-        <h2>Medications</h2>
-        {!session.onShift ? <p className="hint">Tap the shift status in the corner to respond and hear reminders.</p> : null}
-        {meds.length === 0 ? <Empty>No medications yet.</Empty> : null}
-        {meds.length > 0 && medFocus.length === 0 ? <Empty>Nothing else today.</Empty> : null}
-        <ul className="list">
-          {medFocus.map((item) => (
-            <li key={`${item.id}:${item.time}`} className="card" data-testid="home-med" data-status={item.status}>
-              <p className="meta">{item.status === "due" ? "Due" : "Up next"}</p>
-              <button
-                type="button"
-                disabled={!session.onShift}
-                onClick={() => setPrompt({ id: item.id, time: item.time })}
-              >
-                {item.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {session.onShift && medFocus.length > 0 ? (
+        <section className="panel" data-testid="medications">
+          <h2>Medications</h2>
+          <p data-testid="home-med-time">{formatClock(medFocus[0].time)}</p>
+          <ul className="list">
+            {medFocus.map((item) => (
+              <li key={`${item.id}:${item.time}`} data-testid="home-med" data-status={item.status}>
+                <button type="button" onClick={() => setPrompt({ id: item.id, time: item.time })}>
+                  {item.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="panel">
         <h2>Today's schedule</h2>
