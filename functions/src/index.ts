@@ -1208,7 +1208,9 @@ async function coverageActor(request: CallableRequest) {
   if (!canActAsEmployee(caller.role)) {
     throw new HttpsError("permission-denied", "Only an admin can act as another employee.");
   }
-  return requireReadyUser(asUid);
+  const person = await readProfile(asUid);
+  if (!person.active) throw new HttpsError("failed-precondition", "Choose an employee who is still on the roster.");
+  return person;
 }
 
 export const requestShiftCoverage = onCall(callable, async (request) => {
