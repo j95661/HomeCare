@@ -279,7 +279,7 @@ export function MessagesScreen({ thread, go }: Props) {
                 <li key={person.id}>
                   <button type="button" className="person-choice" data-testid="message-person" onClick={() => void openDirect(person)}>
                     {withEmoji(person.displayName, person.emoji)}
-                    {person.awaitingGoogle ? <span className="meta">Waiting for Gmail</span> : null}
+                    {person.awaitingGoogle ? <span className="meta">Signs in with Gmail</span> : null}
                   </button>
                 </li>
               ))}
