@@ -48,6 +48,17 @@ export function isProfileEmoji(value: string): boolean {
   return ALLOWED.has(value);
 }
 
+/** One emoji grapheme from the phone keyboard. Keep identical to functions/src/logic/emoji.ts. */
+export function isSingleEmoji(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 32) return false;
+  const parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(trimmed)];
+  if (parts.length !== 1) return false;
+  if (/\p{Extended_Pictographic}/u.test(trimmed)) return true;
+  if (/^\p{Regional_Indicator}{2}$/u.test(trimmed)) return true;
+  return /\u20E3/u.test(trimmed);
+}
+
 export function nameInitial(name: string): string {
   const letter = name.trim().match(/\p{L}/u);
   return letter ? letter[0].toLocaleUpperCase() : "?";
@@ -56,7 +67,7 @@ export function nameInitial(name: string): string {
 /** The mark shown beside a name: their chosen emoji, or a plain initial. */
 export function nameMark(name: string, emoji?: string): string {
   const mark = (emoji ?? "").trim();
-  return isProfileEmoji(mark) ? mark : nameInitial(name);
+  return isSingleEmoji(mark) ? mark : nameInitial(name);
 }
 
 export function withEmoji(name: string, emoji?: string): string {

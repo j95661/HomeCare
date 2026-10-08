@@ -18,7 +18,7 @@ import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isAccountEnabled, isSuperAdmin, roleLabel } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
-import { nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
+import { isSingleEmoji, nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
 import { applyTheme, COLOR_CHART, COLOR_SCHEMES, parseCustomColor, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
 import { isShiftPeriod, PERIOD_HOURS, SHIFT_PERIODS, type ShiftPeriod } from "../shiftPeriod";
@@ -1002,19 +1002,30 @@ function EmojiPicker() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const current = session.emoji && PROFILE_EMOJI.includes(session.emoji as (typeof PROFILE_EMOJI)[number]) ? session.emoji : "";
+  const [typed, setTyped] = useState("");
+  const saved = isSingleEmoji(session.emoji) ? session.emoji : "";
 
   async function choose(next: string) {
-    if (busy || next === current) return;
+    if (busy || next === saved) return;
     setBusy(true);
     setError("");
     try {
       await session.setEmoji(next);
+      setTyped("");
     } catch (err) {
       setError(errorText(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  function useTyped() {
+    const next = typed.trim();
+    if (!isSingleEmoji(next)) {
+      setError("Type one emoji.");
+      return;
+    }
+    void choose(next);
   }
 
   return (
@@ -1023,15 +1034,15 @@ function EmojiPicker() {
       testId="emoji-toggle"
       open={open}
       onToggle={() => setOpen((currentOpen) => !currentOpen)}
-      summary={<span className="collapse-mark">{current || nameInitial(session.displayName)}</span>}
+      summary={<span className="collapse-mark">{saved || nameInitial(session.displayName)}</span>}
     >
-      <p className="hint">Tap once. It shows next to your name. Leave it as your initial if you prefer.</p>
+      <p className="hint">Tap one below, or type one from your keyboard. It shows next to your name.</p>
       <div className="emoji-grid choices">
         <button
           type="button"
-          className={current ? "emoji" : "emoji primary"}
+          className={saved ? "emoji" : "emoji primary"}
           data-testid="emoji-initial"
-          aria-pressed={!current}
+          aria-pressed={!saved}
           disabled={busy}
           onClick={() => void choose("")}
         >
@@ -1041,10 +1052,10 @@ function EmojiPicker() {
           <button
             key={item}
             type="button"
-            className={current === item ? "emoji primary" : "emoji"}
+            className={saved === item ? "emoji primary" : "emoji"}
             data-testid="emoji-choice"
             data-emoji={item}
-            aria-pressed={current === item}
+            aria-pressed={saved === item}
             disabled={busy}
             onClick={() => void choose(item)}
           >
@@ -1052,6 +1063,29 @@ function EmojiPicker() {
           </button>
         ))}
       </div>
+      <Field label="From your keyboard">
+        <input
+          data-testid="emoji-keyboard"
+          value={typed}
+          maxLength={32}
+          autoComplete="off"
+          autoCorrect="off"
+          enterKeyHint="done"
+          onChange={(event) => {
+            setTyped(event.target.value);
+            setError("");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              useTyped();
+            }
+          }}
+        />
+      </Field>
+      <button type="button" data-testid="emoji-keyboard-save" disabled={busy || !isSingleEmoji(typed)} onClick={useTyped}>
+        Use this emoji
+      </button>
       {error ? <Notice>{error}</Notice> : null}
     </CollapseSection>
   );
