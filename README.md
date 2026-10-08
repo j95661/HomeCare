@@ -23,7 +23,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 ## What the app does
 
 1. Pinned handover notes on the home screen.
-2. Day, week, and month schedule. A care provider can request a swap or a day off. Someone else accepts, and the shift moves to them. The request keeps who asked, who accepted, and when.
+2. Day, week, and month schedule. A team lead sets each care provider’s repeating weekday shifts once. The calendar shows that weekly pattern with dated exceptions applied. A swap or a day off writes an exception for that date only and leaves the weekly pattern alone. On an accepted swap, a team lead can choose “Make this the new weekly pattern” so future weeks follow the new person. Exception days are marked on the calendar. The request keeps who asked, who accepted, and when.
 3. Medications with dose, frequency, times, and care notes. Reminders are visible and audible, and only go to people marked on shift. The prompt is Given, Declined, Missed, or Snooze. Every response is logged.
 4. On-shift / off-shift toggle. Off shift stops medication reminders for that person only. Messages and coverage requests still notify them.
 5. Activities for things to do with Andrew. Anyone on the team can add or update. Admins can remove.
@@ -55,7 +55,7 @@ npx firebase emulators:start --project demo-family-care
 SUPER_ADMIN_EMAIL=you@example.com SUPER_ADMIN_PASSWORD='choose-a-password1' npm run bootstrap -- --emulator
 ```
 
-Add `SEED_DEMO=1` to also create sample people, a medication, today's shifts, a guide, an activity, and a handover note. Demo sign-ins use the same password:
+Add `SEED_DEMO=1` to also create sample people, a medication, a weekly shift pattern, a guide, an activity, and a handover note. Demo sign-ins use the same password:
 
 - `parent@homecare.test` admin
 - `lead@homecare.test` team lead
@@ -91,4 +91,4 @@ The public Firebase config is not a secret. Security rules are the access contro
 npm test
 ```
 
-`npm test` runs the logic suites, then the Firestore emulator rules suites. Logic covers roles, revocation order, OTP, the password window, on-shift medication fan-out, snooze grace, off-shift message delivery, shift acceptance, calendar dates, and the Home Screen push gate. Rules suites check that inactive, unverified, and expired accounts fail closed, and that clients cannot write logs, snoozes, devices, OTP challenges, or someone else's thread.
+`npm test` runs the logic suites, then the Firestore emulator rules suites. Logic covers roles, revocation order, OTP, the password window, on-shift medication fan-out, snooze grace, off-shift message delivery, shift acceptance, the weekly template with dated exceptions, calendar dates, and the Home Screen push gate. Rules suites check that inactive, unverified, and expired accounts fail closed, and that clients cannot write logs, snoozes, exceptions, devices, OTP challenges, or someone else's thread.

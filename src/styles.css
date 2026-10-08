@@ -187,6 +187,12 @@ h2 { font-size: 1.25rem; }
   padding: 12px;
 }
 .card.pinned { border-color: var(--accent); }
+.card.exception,
+.panel.exception,
+.day-cell.exception {
+  border-style: dashed;
+  border-color: var(--accent);
+}
 .card.mine { background: var(--mine); }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .list button { text-align: left; }
@@ -231,6 +237,13 @@ h2 { font-size: 1.25rem; }
   font-size: 0.95rem;
 }
 .muted-cell { opacity: 0.45; }
+.exception-mark {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
 .count {
   display: block;
   margin-top: 2px;

@@ -148,6 +148,26 @@ describe("medication and shift shape", () => {
     await assertFails(deleteDoc(doc(dbFor("pat"), "shifts/day")));
     await assertSucceeds(deleteDoc(doc(dbFor("lead"), "shifts/day")));
   });
+
+  it("rejects a weekly shift for an inactive person, a bad weekday, or a reversed window", async () => {
+    const pattern = {
+      userId: "pat",
+      userName: "Pat",
+      weekday: 3,
+      start: "08:00",
+      end: "16:00",
+      effectiveFrom: "2000-01-01",
+      effectiveUntil: "",
+      createdBy: "lead",
+      updatedAt: serverTimestamp(),
+    };
+    await assertFails(setDoc(doc(dbFor("lead"), "shiftTemplates/old"), { ...pattern, userId: "inactive", userName: "Old" }));
+    await assertFails(setDoc(doc(dbFor("lead"), "shiftTemplates/bad-day"), { ...pattern, weekday: 7 }));
+    await assertFails(
+      setDoc(doc(dbFor("lead"), "shiftTemplates/backwards"), { ...pattern, effectiveFrom: "2026-10-08", effectiveUntil: "2026-10-01" }),
+    );
+    await assertSucceeds(setDoc(doc(dbFor("lead"), "shiftTemplates/ok"), pattern));
+  });
 });
 
 describe("notes, guides, and threads", () => {

@@ -15,8 +15,9 @@ import { beep } from "../audio";
 import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { db } from "../firebase";
+import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
-import type { Handover, Medication, MedLog, RouteState, Shift } from "../types";
+import type { Handover, Medication, MedLog, RouteState } from "../types";
 
 type Props = {
   route: RouteState;
@@ -28,7 +29,8 @@ export function HomeScreen({ route, go }: Props) {
   const emoji = useEmojiMap();
   const [notes, setNotes] = useState<Handover[]>([]);
   const [meds, setMeds] = useState<Medication[]>([]);
-  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+  const [exceptions, setExceptions] = useState<ShiftException[]>([]);
   const [logs, setLogs] = useState<MedLog[]>([]);
   const [body, setBody] = useState("");
   const [noteText, setNoteText] = useState("");
@@ -56,8 +58,13 @@ export function HomeScreen({ route, go }: Props) {
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
-        query(collection(db, "shifts"), where("date", "==", day), orderBy("start")),
-        (snap) => setShifts(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Shift, "id">) }))),
+        collection(db, "shiftTemplates"),
+        (snap) => setTemplates(snap.docs.map((item) => templateFromData(item.id, item.data() as Record<string, unknown>))),
+        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+      ),
+      onSnapshot(
+        query(collection(db, "shiftExceptions"), where("date", "==", day)),
+        (snap) => setExceptions(snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>))),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
@@ -133,6 +140,7 @@ export function HomeScreen({ route, go }: Props) {
   }
 
   const promptMed = meds.find((med) => med.id === prompt?.id);
+  const shifts = resolveDay(day, templates, exceptions);
 
   return (
     <div className="stack">
@@ -233,7 +241,18 @@ export function HomeScreen({ route, go }: Props) {
         {shifts.length === 0 ? <Empty>No shifts today.</Empty> : null}
         <ul className="list">
           {shifts.map((shift) => (
-            <li key={shift.id} className="card">
+            <li
+              key={shift.id}
+              className={shift.source === "exception" ? "card exception" : "card"}
+              data-testid="today-shift"
+              data-source={shift.source}
+              data-user={shift.userName}
+            >
+              {shift.source === "exception" ? (
+                <span className="badge" data-testid="exception-badge">
+                  {exceptionLabel(shift.kind)}
+                </span>
+              ) : null}
               <strong>{withEmoji(shift.userName, emoji.get(shift.userId))}</strong>
               <p>
                 {formatClock(shift.start)} – {formatClock(shift.end)}

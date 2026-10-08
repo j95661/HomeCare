@@ -219,6 +219,46 @@ describe("security rules", () => {
     await assertSucceeds(getDocs(collection(dbFor("pat"), "shiftRequests")));
   });
 
+  it("lets team leads manage the weekly pattern and keeps exceptions on the server", async () => {
+    const pattern = {
+      userId: "pat",
+      userName: "Pat",
+      weekday: 4,
+      start: "08:00",
+      end: "16:00",
+      effectiveFrom: "2000-01-01",
+      effectiveUntil: "",
+      createdBy: "lead",
+      updatedAt: serverTimestamp(),
+    };
+    await assertSucceeds(setDoc(doc(dbFor("lead"), "shiftTemplates/thu"), pattern));
+    await assertFails(setDoc(doc(dbFor("pat"), "shiftTemplates/self"), { ...pattern, createdBy: "pat" }));
+    await assertFails(setDoc(doc(dbFor("lead"), "shiftTemplates/night"), { ...pattern, start: "16:00", end: "08:00" }));
+    await assertSucceeds(getDoc(doc(dbFor("pat"), "shiftTemplates/thu")));
+    await assertSucceeds(
+      updateDoc(doc(dbFor("admin"), "shiftTemplates/thu"), { userId: "sam", userName: "Sam", updatedAt: serverTimestamp() }),
+    );
+    await assertFails(deleteDoc(doc(dbFor("pat"), "shiftTemplates/thu")));
+    await assertSucceeds(deleteDoc(doc(dbFor("lead"), "shiftTemplates/thu")));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "shiftExceptions/ex1"), {
+        date: "2026-10-08",
+        templateId: "thu",
+        kind: "swap",
+        userId: "sam",
+        userName: "Sam",
+        start: "08:00",
+        end: "16:00",
+        requestId: "r1",
+        createdBy: "sam",
+        updatedAt: Timestamp.now(),
+      });
+    });
+    await assertSucceeds(getDoc(doc(dbFor("pat"), "shiftExceptions/ex1")));
+    await assertFails(setDoc(doc(dbFor("lead"), "shiftExceptions/ex2"), { date: "2026-10-15", templateId: "thu", kind: "swap" }));
+    await assertFails(updateDoc(doc(dbFor("admin"), "shiftExceptions/ex1"), { userId: "pat" }));
+  });
+
   it("keeps medication logs server-written and limits who can read them", async () => {
     await assertFails(setDoc(doc(dbFor("pat"), "medicationLogs/new"), { userId: "pat", action: "given" }));
     await assertSucceeds(getDoc(doc(dbFor("pat"), "medicationLogs/log1")));
