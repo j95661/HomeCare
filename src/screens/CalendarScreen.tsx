@@ -15,7 +15,7 @@ import { errorText, isPermissionDenied } from "../api";
 import { nameInitial, withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
-import { canEditWeeklyPattern, isAccountEnabled } from "../roles";
+import { canEditWeeklyPattern, canManageSchedule, isAccountEnabled } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import {
   WEEKDAY_NAMES,
@@ -61,7 +61,10 @@ export function CalendarScreen() {
   const [patternsOpen, setPatternsOpen] = useState(false);
   const [openPatternPeople, setOpenPatternPeople] = useState<ReadonlySet<string>>(() => new Set());
   const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
+  const [addDayFor, setAddDayFor] = useState<string | null>(null);
+  const [dayForm, setDayForm] = useState({ weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
   const manage = canEditWeeklyPattern(session.role);
+  const leadPattern = !manage && canManageSchedule(session.role);
   const [board, setBoard] = useState<"mine" | "team">("mine");
   const today = todayISO(session.timezone);
 
@@ -191,6 +194,48 @@ export function CalendarScreen() {
     }
   }
 
+  function beginAddDay(userId: string) {
+    setError("");
+    setAddDayFor((current) => (current === userId ? null : userId));
+    setDayForm({ weekday: weekdayOf(today), start: "08:00", end: "16:00" });
+  }
+
+  async function saveDay(userId: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    const person = people.find((item) => item.id === userId);
+    if (!person) {
+      setError("Choose a person.");
+      return;
+    }
+    if (dayForm.start >= dayForm.end) {
+      setError("The shift must end after it starts.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await addDoc(collection(db, "shiftTemplates"), {
+        userId: person.id,
+        userName: person.displayName,
+        weekday: dayForm.weekday,
+        start: dayForm.start,
+        end: dayForm.end,
+        effectiveFrom: "2000-01-01",
+        effectiveUntil: "",
+        createdBy: session.uid,
+        updatedAt: serverTimestamp(),
+      });
+      setAddDayFor(null);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removePattern(id: string) {
     if (session.viewingAs) {
       setError(VIEW_CHANGE);
@@ -210,6 +255,45 @@ export function CalendarScreen() {
       : mode === "day"
         ? [anchor]
         : [];
+
+  function addDayFields(userId: string) {
+    return (
+      <div className="stack" data-testid="pattern-add-day-form">
+        <Field label="Weekday">
+          <select
+            data-testid="pattern-add-weekday"
+            value={dayForm.weekday}
+            onChange={(event) => setDayForm({ ...dayForm, weekday: Number(event.target.value) })}
+          >
+            {WEEKDAY_NAMES.map((name, index) => (
+              <option key={name} value={index}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Start">
+          <input
+            data-testid="pattern-add-start"
+            type="time"
+            value={dayForm.start}
+            onChange={(event) => setDayForm({ ...dayForm, start: event.target.value })}
+          />
+        </Field>
+        <Field label="End">
+          <input
+            data-testid="pattern-add-end"
+            type="time"
+            value={dayForm.end}
+            onChange={(event) => setDayForm({ ...dayForm, end: event.target.value })}
+          />
+        </Field>
+        <button type="button" className="primary" data-testid="pattern-add-day-save" disabled={busy} onClick={() => void saveDay(userId)}>
+          Save day
+        </button>
+      </div>
+    );
+  }
 
   function renderShift(shift: ResolvedShift) {
     return (
@@ -253,6 +337,109 @@ export function CalendarScreen() {
       </section>
     );
   }
+
+  const repeatingShiftsPanel = (
+        <section className="panel" data-testid="repeating-shifts" data-open={patternsOpen ? "true" : "false"}>
+          <button
+            type="button"
+            className="collapse-toggle"
+            data-testid="repeating-shifts-toggle"
+            aria-expanded={patternsOpen}
+            onClick={() => setPatternsOpen((open) => !open)}
+          >
+            <span className="collapse-title handover-title">Repeating shifts</span>
+            <span className="collapse-summary">
+              <span className="notice-summary">
+                {weeklyShiftCount === 0
+                  ? "No weekly shifts yet."
+                  : weeklyShiftCount === 1
+                    ? "1 weekly shift"
+                    : `${weeklyShiftCount} weekly shifts`}
+              </span>
+              <span aria-hidden="true">{patternsOpen ? "▾" : "▸"}</span>
+            </span>
+          </button>
+          {patternsOpen && patternGroups.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
+          {patternsOpen ? <ul className="list">
+            {patternGroups.map((group) => {
+              const open = openPatternPeople.has(group.userId);
+              const person = people.find((item) => item.id === group.userId);
+              const dayCount = group.shifts.length;
+              const dayLabel = dayCount === 0 ? "No days" : dayCount === 1 ? "1 day" : `${dayCount} days`;
+              return (
+                <li key={group.userId} className="card" data-testid="pattern-person" data-user={group.userName} data-open={open ? "true" : "false"}>
+                  <button
+                    type="button"
+                    className="collapse-toggle"
+                    data-testid="pattern-person-toggle"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setOpenPatternPeople((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.userId)) next.delete(group.userId);
+                        else next.add(group.userId);
+                        return next;
+                      })
+                    }
+                  >
+                    <span className="collapse-title">{withEmoji(person?.displayName || group.userName, person?.emoji)}</span>
+                    <span className="collapse-summary">
+                      <span>{dayLabel}</span>
+                      <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+                    </span>
+                  </button>
+                  {open && group.shifts.length === 0 ? (
+                    <div className="collapse-body stack">
+                      <div className="split pattern-time-row">
+                        <Empty>No weekly shifts yet.</Empty>
+                        <button type="button" data-testid="pattern-add-day" onClick={() => beginAddDay(group.userId)}>
+                          Add Day
+                        </button>
+                      </div>
+                      {addDayFor === group.userId ? addDayFields(group.userId) : null}
+                    </div>
+                  ) : null}
+                  {open && group.shifts.length > 0 ? (
+                    <ul className="list collapse-body">
+                      {group.shifts.map((template, index) => (
+                        <li key={template.id} className="card" data-testid="pattern-row" data-weekday={template.weekday}>
+                          <strong>{WEEKDAY_NAMES[template.weekday] ?? "Weekday"}</strong>
+                          <div className="split pattern-time-row">
+                            <p>
+                              {formatClock(template.start)} – {formatClock(template.end)}
+                            </p>
+                            {index === 0 ? (
+                              <button type="button" data-testid="pattern-add-day" onClick={() => beginAddDay(group.userId)}>
+                                Add Day
+                              </button>
+                            ) : (
+                              <span />
+                            )}
+                          </div>
+                          {index === 0 && addDayFor === group.userId ? addDayFields(group.userId) : null}
+                          <p className="meta">{patternSpan(template)}</p>
+                          <Field label="Person">
+                            <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
+                              {people.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {rosterName(item)}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <button type="button" onClick={() => void removePattern(template.id)}>
+                            Remove weekly shift
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul> : null}
+        </section>
+  );
 
   return (
     <div className="stack">
@@ -330,95 +517,11 @@ export function CalendarScreen() {
           </button>
         </section>
       ) : null}
-      {manage ? (
-        <section className="panel" data-testid="repeating-shifts" data-open={patternsOpen ? "true" : "false"}>
-          <button
-            type="button"
-            className="collapse-toggle"
-            data-testid="repeating-shifts-toggle"
-            aria-expanded={patternsOpen}
-            onClick={() => setPatternsOpen((open) => !open)}
-          >
-            <span className="collapse-title handover-title">Repeating shifts</span>
-            <span className="collapse-summary">
-              <span className="notice-summary">
-                {weeklyShiftCount === 0
-                  ? "No weekly shifts yet."
-                  : weeklyShiftCount === 1
-                    ? "1 weekly shift"
-                    : `${weeklyShiftCount} weekly shifts`}
-              </span>
-              <span aria-hidden="true">{patternsOpen ? "▾" : "▸"}</span>
-            </span>
-          </button>
-          {patternsOpen && patternGroups.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
-          {patternsOpen ? <ul className="list">
-            {patternGroups.map((group) => {
-              const open = openPatternPeople.has(group.userId);
-              const person = people.find((item) => item.id === group.userId);
-              const dayCount = group.shifts.length;
-              const dayLabel = dayCount === 0 ? "No days" : dayCount === 1 ? "1 day" : `${dayCount} days`;
-              return (
-                <li key={group.userId} className="card" data-testid="pattern-person" data-user={group.userName} data-open={open ? "true" : "false"}>
-                  <button
-                    type="button"
-                    className="collapse-toggle"
-                    data-testid="pattern-person-toggle"
-                    aria-expanded={open}
-                    onClick={() =>
-                      setOpenPatternPeople((current) => {
-                        const next = new Set(current);
-                        if (next.has(group.userId)) next.delete(group.userId);
-                        else next.add(group.userId);
-                        return next;
-                      })
-                    }
-                  >
-                    <span className="collapse-title">{withEmoji(person?.displayName || group.userName, person?.emoji)}</span>
-                    <span className="collapse-summary">
-                      <span>{dayLabel}</span>
-                      <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-                    </span>
-                  </button>
-                  {open && group.shifts.length === 0 ? (
-                    <div className="collapse-body">
-                      <Empty>No weekly shifts yet.</Empty>
-                    </div>
-                  ) : null}
-                  {open && group.shifts.length > 0 ? (
-                    <ul className="list collapse-body">
-                      {group.shifts.map((template) => (
-                        <li key={template.id} className="card" data-testid="pattern-row" data-weekday={template.weekday}>
-                          <strong>{WEEKDAY_NAMES[template.weekday] ?? "Weekday"}</strong>
-                          <p>
-                            {formatClock(template.start)} – {formatClock(template.end)}
-                          </p>
-                          <p className="meta">{patternSpan(template)}</p>
-                          <Field label="Person">
-                            <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
-                              {people.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {rosterName(item)}
-                                </option>
-                              ))}
-                            </select>
-                          </Field>
-                          <button type="button" onClick={() => void removePattern(template.id)}>
-                            Remove weekly shift
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul> : null}
-        </section>
-      ) : null}
+      {repeatingShiftsPanel}
       </>
       ) : board === "mine" ? (
         <>
+          {leadPattern ? repeatingShiftsPanel : null}
           <section className="panel" data-testid="my-repeating">
             <h2>My Schedule</h2>
             <p className="hint">This repeats every week. A swap, time off, or sick leave changes one date, and the team week shows it.</p>
@@ -444,6 +547,7 @@ export function CalendarScreen() {
         </>
       ) : (
         <>
+          {leadPattern ? repeatingShiftsPanel : null}
           <div className="split thirds">
             <button type="button" onClick={() => move(-1)}>
               Previous
