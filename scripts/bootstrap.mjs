@@ -15,7 +15,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST && !process.env.GOOGLE_APPLICATION_CRED
 
 const email = (process.env.SUPER_ADMIN_EMAIL || "").trim().toLowerCase();
 const password = process.env.SUPER_ADMIN_PASSWORD || "";
-const displayName = process.env.SUPER_ADMIN_NAME || "Super admin";
+const displayName = process.env.SUPER_ADMIN_NAME || "Dad";
 
 if (!email || !email.includes("@")) {
   console.error("Set SUPER_ADMIN_EMAIL to the one super admin address.");
