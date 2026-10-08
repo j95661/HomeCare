@@ -502,13 +502,18 @@ export function PeopleScreen() {
     }
   }
 
-  if (!canManageMeds(session.role)) return <Notice>Only an admin can clear an emoji.</Notice>;
+  const managePeople = canManageMeds(session.role);
+  if (!managePeople && !session.canSwitchView) return <Notice>Only an admin can clear an emoji.</Notice>;
   const manageAccounts = isSuperAdmin(session.role);
 
   return (
     <div className="stack">
       <h2>People</h2>
-      {manageAccounts ? null : <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>}
+      {manageAccounts ? null : managePeople ? (
+        <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>
+      ) : (
+        <p className="hint">Choose an employee. Swap and time off use that account.</p>
+      )}
       {manageAccounts ? (
       <CollapseSection
         title="Add person"
@@ -684,7 +689,7 @@ function PersonRow({
             })
           }
         >
-          See their view
+          Act as this employee
         </button>
       ) : null}
       {manageAccounts && person.active && !isAccountEnabled(person) ? (
@@ -807,6 +812,7 @@ export function SettingsScreen() {
   const [days, setDays] = useState(String(session.passwordMaxAgeDays));
   const [timezone, setTimezone] = useState(session.timezone);
   const [snooze, setSnooze] = useState(String(session.snoozeMinutes));
+  const [replyHours, setReplyHours] = useState("24");
   const [scheme, setScheme] = useState(resolveColorScheme(session.colorScheme));
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -819,6 +825,7 @@ export function SettingsScreen() {
         setDays(String(snap.get("passwordMaxAgeDays") ?? session.passwordMaxAgeDays));
         setTimezone(String(snap.get("timezone") ?? session.timezone));
         setSnooze(String(snap.get("snoozeMinutes") ?? session.snoozeMinutes));
+        setReplyHours(String(snap.get("coverageReplyHours") ?? 24));
         setScheme(resolveColorScheme(String(snap.get("colorScheme") || session.colorScheme || "")));
         setEmail(String(snap.get("superAdminEmail") ?? ""));
       },
@@ -838,6 +845,7 @@ export function SettingsScreen() {
         passwordMaxAgeDays: Number(days),
         timezone,
         snoozeMinutes: Number(snooze),
+        coverageReplyHours: Number(replyHours),
         colorScheme: scheme,
       });
       setSaved(true);
@@ -860,6 +868,14 @@ export function SettingsScreen() {
       </Field>
       <Field label="Snooze minutes">
         <input inputMode="numeric" value={snooze} onChange={(event) => setSnooze(event.target.value)} />
+      </Field>
+      <Field label="Hours for the team to respond to time off">
+        <input
+          inputMode="numeric"
+          data-testid="coverage-reply-hours"
+          value={replyHours}
+          onChange={(event) => setReplyHours(event.target.value)}
+        />
       </Field>
       <fieldset className="schemes">
         <legend>Team color scheme</legend>
@@ -1279,7 +1295,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
     { view: "activities", label: "Activities", show: true },
     { view: "guides", label: "Guides", show: true },
     { view: "medlog", label: "Med log", show: canReviewLogs(session.role) },
-    { view: "people", label: "People", show: canManageMeds(session.role) },
+    { view: "people", label: "People", show: canManageMeds(session.role) || session.canSwitchView },
     { view: "settings", label: "Settings", show: isSuperAdmin(session.role) },
   ];
 

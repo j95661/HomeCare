@@ -12,7 +12,7 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import { errorText, isPermissionDenied } from "../api";
+import { call, errorText, isPermissionDenied } from "../api";
 import { CareImage, PictureButton, PictureControls, careImagePath, uploadCareImage, usePictureDraft } from "../careImage";
 import { useEmojiMap, withEmoji } from "../emoji";
 import { beep } from "../audio";
@@ -28,7 +28,7 @@ import { homeMedicationFocus } from "../homeMed";
 import { enqueueMedAction, mergeMedicationLogs, newMedActionId, normalizeQueuedAction, useQueuedMedActions } from "../medQueue";
 import { syncMeds } from "../medSync";
 import { isReachabilityError } from "../offline";
-import { canDeleteHandover } from "../roles";
+import { canDeleteHandover, isCareStaff } from "../roles";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
 
@@ -53,7 +53,11 @@ export function HomeScreen({ route, go }: Props) {
     senderName: string;
     imagePath: string;
     at?: { toDate: () => Date };
+    kind: string;
+    requestId: string;
+    coverageType: string;
   } | null>(null);
+  const [coverageStatus, setCoverageStatus] = useState("");
   const [readNoticeId, setReadNoticeId] = useState("");
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -91,7 +95,8 @@ export function HomeScreen({ route, go }: Props) {
         doc(db, "groupThread/main"),
         (snap) => {
           const id = String(snap.get("noticeMessageId") || "");
-          if (!id) {
+          const kind = String(snap.get("noticeKind") || "");
+          if (!id || (kind === "coverage" && !isCareStaff(session.role))) {
             setCareNotice(null);
             return;
           }
@@ -103,6 +108,9 @@ export function HomeScreen({ route, go }: Props) {
             senderName: String(snap.get("noticeSenderName") || ""),
             imagePath: String(snap.get("noticeImagePath") || ""),
             at: at && typeof at.toDate === "function" ? (at as { toDate: () => Date }) : undefined,
+            kind,
+            requestId: String(snap.get("noticeRequestId") || ""),
+            coverageType: String(snap.get("noticeCoverageType") || ""),
           });
         },
         (err) => {
@@ -208,7 +216,31 @@ export function HomeScreen({ route, go }: Props) {
     return () => window.clearInterval(id);
   }, [meds, visibleLogs, session.onShift, session.viewingAs, session.timezone, day]);
 
+  useEffect(() => {
+    if (!careNotice?.requestId) {
+      setCoverageStatus("");
+      return;
+    }
+    return onSnapshot(doc(db, "shiftRequests", careNotice.requestId), (snap) => {
+      setCoverageStatus(snap.exists() ? String(snap.get("status") || "") : "");
+    });
+  }, [careNotice?.requestId]);
+
   const noticeUnread = Boolean(careNotice && careNotice.id !== readNoticeId);
+
+  async function acceptNotice() {
+    if (!careNotice?.requestId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await call("acceptShiftRequest", { id: careNotice.requestId });
+    } catch (err) {
+      if (isPermissionDenied(err)) session.onDenied();
+      else setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (careNotice && noticeUnread && noticeHide.current !== careNotice.id) setNoticeOpen(true);
@@ -366,6 +398,14 @@ export function HomeScreen({ route, go }: Props) {
             <p className="meta">
               {withEmoji(careNotice.senderName, emoji.get(careNotice.senderId))} · {formatStamp(careNotice.at)}
             </p>
+            {careNotice.kind === "coverage" &&
+            coverageStatus === "pending" &&
+            isCareStaff(session.role) &&
+            careNotice.senderId !== session.uid ? (
+              <button type="button" className="primary" data-testid="notice-accept" disabled={busy} onClick={() => void acceptNotice()}>
+                {careNotice.coverageType === "swap" ? "Accept swap" : "I can cover this"}
+              </button>
+            ) : null}
           </div>
         ) : null}
         {noticeOpen && !careNotice ? <p className="empty">No notice.</p> : null}

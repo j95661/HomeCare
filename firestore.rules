@@ -332,7 +332,8 @@ service cloud.firestore {
       let notice = isTeamLeadOrAbove()
         && changed.hasOnly([
           'lastMessageText', 'lastMessageAt', 'lastSenderName', 'lastSenderId',
-          'noticeMessageId', 'noticeText', 'noticeSenderId', 'noticeSenderName', 'noticeImagePath', 'noticeAt'
+          'noticeMessageId', 'noticeText', 'noticeSenderId', 'noticeSenderName', 'noticeImagePath', 'noticeAt',
+          'noticeKind', 'noticeRequestId', 'noticeCoverageType'
         ])
         && request.resource.data.noticeSenderId == request.auth.uid
         && request.resource.data.noticeAt == request.time
@@ -349,6 +350,14 @@ service cloud.firestore {
         && (
           request.resource.data.noticeImagePath == ''
           || ownedImage(request.resource.data.noticeImagePath, 'messages/group/')
+        )
+        && (
+          !changed.hasAny(['noticeKind', 'noticeRequestId', 'noticeCoverageType'])
+          || (
+            request.resource.data.noticeKind == ''
+            && request.resource.data.noticeRequestId == ''
+            && request.resource.data.noticeCoverageType == ''
+          )
         );
       return (preview || notice)
         && request.resource.data.lastSenderId == request.auth.uid

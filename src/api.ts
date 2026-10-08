@@ -1,6 +1,6 @@
 import { httpsCallable } from "firebase/functions";
 import { functions } from "./firebase";
-import { viewOnlyError } from "./viewAs";
+import { actingAsUid, COVERAGE_ACT_CALLS, viewOnlyError, withActingEmployee } from "./viewAs";
 
 const OWN_ACCOUNT_CALLS = new Set([
   "getSessionState",
@@ -14,9 +14,9 @@ const OWN_ACCOUNT_CALLS = new Set([
 
 export async function call<T>(name: string, data?: object): Promise<T> {
   const blocked = viewOnlyError();
-  if (blocked && !OWN_ACCOUNT_CALLS.has(name)) throw new Error(blocked);
+  if (blocked && !OWN_ACCOUNT_CALLS.has(name) && !COVERAGE_ACT_CALLS.has(name)) throw new Error(blocked);
   const fn = httpsCallable(functions, name);
-  const result = await fn(data ?? {});
+  const result = await fn(withActingEmployee(name, data, actingAsUid()));
   return result.data as T;
 }
 

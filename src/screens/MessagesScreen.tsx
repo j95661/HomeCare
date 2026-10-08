@@ -222,6 +222,9 @@ export function MessagesScreen({ thread, go }: Props) {
           threadUpdate.noticeSenderName = session.displayName;
           threadUpdate.noticeImagePath = payload.imagePath || "";
           threadUpdate.noticeAt = serverTimestamp();
+          threadUpdate.noticeKind = "";
+          threadUpdate.noticeRequestId = "";
+          threadUpdate.noticeCoverageType = "";
         }
         batch.set(ref, payload);
         batch.update(doc(db, "groupThread/main"), threadUpdate);

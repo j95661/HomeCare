@@ -38,11 +38,29 @@ export function displaySession<T extends Session>(account: T, view: ViewIdentity
 }
 
 let viewOnly = false;
+let actingUid = "";
+
+export const COVERAGE_ACT_CALLS = new Set(["requestShiftCoverage", "acceptShiftRequest", "cancelShiftRequest"]);
 
 export function setViewOnly(on: boolean) {
   viewOnly = on;
 }
 
+export function setActingUid(uid: string) {
+  actingUid = uid;
+}
+
+export function actingAsUid(): string {
+  return actingUid;
+}
+
 export function viewOnlyError(): string | null {
   return viewOnly ? VIEW_CHANGE : null;
+}
+
+/** Swap and time off run as the employee an admin is acting as. */
+export function withActingEmployee(name: string, data: object | undefined, uid: string): object {
+  const payload = { ...(data ?? {}) };
+  if (uid && COVERAGE_ACT_CALLS.has(name)) return { ...payload, asUid: uid };
+  return payload;
 }

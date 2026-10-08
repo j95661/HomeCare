@@ -93,9 +93,12 @@ export type ShiftRequest = {
   shiftEnd: string;
   requesterId: string;
   requesterName: string;
-  status: "pending" | "accepted" | "declined" | "cancelled";
+  reason?: string;
+  status: "pending" | "awaiting_admin" | "accepted" | "declined" | "cancelled";
   acceptedBy?: string | null;
   acceptedByName?: string | null;
+  coverBy?: string;
+  coverByName?: string;
   patternUpdated?: boolean;
   history?: { action: string; uid: string; name: string; at: string }[];
 };

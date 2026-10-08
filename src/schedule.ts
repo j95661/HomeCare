@@ -122,6 +122,20 @@ export function visibleCoverageRequests<T extends { status: string }>(requests: 
   return requests.filter((item) => item.status !== "cancelled");
 }
 
+/** Care staff see open team requests. Admins see time off once it is waiting for them, plus accepted history. */
+export function showCoverageRequest(
+  item: { status: string; type: string; requesterId: string },
+  role: string,
+  uid: string,
+): boolean {
+  if (item.status === "cancelled" || item.status === "declined") return false;
+  if (item.requesterId === uid) return true;
+  if (role === "team_lead" || role === "care_provider") return true;
+  if (role !== "super_admin" && role !== "admin") return false;
+  if (item.status === "accepted") return true;
+  return isAwayKind(item.type) && item.status === "awaiting_admin";
+}
+
 export function coverageKind(value: unknown): CoverageKind | "" {
   return value === "swap" || value === "day_off" || value === "sick_leave" ? value : "";
 }

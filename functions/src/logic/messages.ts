@@ -6,11 +6,12 @@ export function messagePreview(text: string, hasImage: boolean): string {
 }
 
 export type CoverageNotice = {
-  action: "requested" | "accepted" | "cancelled";
+  action: "requested" | "accepted" | "cancelled" | "covered";
   type: "swap" | "day_off" | "sick_leave";
   date: string;
   start: string;
   end: string;
+  reason?: string;
 };
 
 function formatDay(iso: string): string {
@@ -35,11 +36,13 @@ function coveragePhrase(notice: CoverageNotice): string {
   if (notice.type === "day_off") {
     if (notice.action === "accepted") return "Approved the time off";
     if (notice.action === "cancelled") return "Cancelled the time off";
+    if (notice.action === "covered") return "Offered to cover the time off";
     return "Requested time off";
   }
   if (notice.type === "sick_leave") {
     if (notice.action === "accepted") return "Approved the sick leave";
     if (notice.action === "cancelled") return "Cancelled the sick leave";
+    if (notice.action === "covered") return "Offered to cover the sick leave";
     return "Requested sick leave";
   }
   if (notice.action === "accepted") return "Took the shift swap";
@@ -47,10 +50,19 @@ function coveragePhrase(notice: CoverageNotice): string {
   return "Requested a shift swap";
 }
 
+function coverageReason(notice: CoverageNotice): string {
+  const reason = notice.reason?.trim() ?? "";
+  return reason ? ` Reason: ${reason}` : "";
+}
+
 /** Care-team text for a shift swap, time off, or sick leave. */
 export function coverageMessageText(notice: CoverageNotice): string {
   const when = `${formatDay(notice.date)}, ${formatClock(notice.start)}–${formatClock(notice.end)}`;
-  return `${coveragePhrase(notice)} for ${when}.`;
+  return `${coveragePhrase(notice)} for ${when}.${coverageReason(notice)}`;
+}
+
+export function coverageWhen(notice: Pick<CoverageNotice, "date" | "start" | "end">): string {
+  return `${formatDay(notice.date)}, ${formatClock(notice.start)}–${formatClock(notice.end)}`;
 }
 
 export function replaceParticipant(ids: string[], fromUid: string, toUid: string): string[] {

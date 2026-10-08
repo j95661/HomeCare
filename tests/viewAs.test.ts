@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/types";
-import { canViewAsEmployee, displaySession, type ViewIdentity } from "../src/viewAs";
+import { canViewAsEmployee, displaySession, withActingEmployee, type ViewIdentity } from "../src/viewAs";
 
 const account: Session = {
   uid: "dad",
@@ -52,5 +52,16 @@ describe("view as employee", () => {
     expect(back.role).toBe("super_admin");
     expect(back.viewingAs).toBe(false);
     expect(back.personalColorScheme).toBe("custom:#29327a");
+  });
+
+  it("sends swap and time off as the employee an admin is acting as", () => {
+    expect(withActingEmployee("requestShiftCoverage", { date: "2026-10-29", reason: "Appointment" }, "alex")).toEqual({
+      date: "2026-10-29",
+      reason: "Appointment",
+      asUid: "alex",
+    });
+    expect(withActingEmployee("acceptShiftRequest", { id: "req" }, "sam")).toEqual({ id: "req", asUid: "sam" });
+    expect(withActingEmployee("updateAppSettings", { snoozeMinutes: 10 }, "alex")).toEqual({ snoozeMinutes: 10 });
+    expect(withActingEmployee("requestShiftCoverage", { reason: "Appointment" }, "")).toEqual({ reason: "Appointment" });
   });
 });

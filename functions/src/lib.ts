@@ -3,6 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+import { coverageReplyHours } from "./logic/coverage";
 import { DEFAULT_TIMEZONE } from "./logic/password";
 import { isRole, type Role } from "./logic/roles";
 import { normalizeSignIn, type SignInMethod } from "./logic/signin";
@@ -37,6 +38,7 @@ export type AppSettings = {
   passwordMaxAgeDays: number;
   timezone: string;
   snoozeMinutes: number;
+  coverageReplyHours: number;
   colorScheme: ColorSchemeId;
   superAdminEmail: string;
   superAdminUid: string;
@@ -55,6 +57,7 @@ export async function readSettings(store: Firestore = db): Promise<AppSettings> 
     passwordMaxAgeDays: Number(data.passwordMaxAgeDays),
     timezone: String(data.timezone || DEFAULT_TIMEZONE),
     snoozeMinutes: Number(data.snoozeMinutes || 10),
+    coverageReplyHours: coverageReplyHours(data.coverageReplyHours),
     colorScheme: isColorScheme(data.colorScheme) ? data.colorScheme : DEFAULT_COLOR_SCHEME,
     superAdminEmail: String(data.superAdminEmail || ""),
     superAdminUid: String(data.superAdminUid || ""),
