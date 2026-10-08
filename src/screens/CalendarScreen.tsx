@@ -57,6 +57,7 @@ export function CalendarScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [patternsOpen, setPatternsOpen] = useState(false);
   const [openPatternPeople, setOpenPatternPeople] = useState<ReadonlySet<string>>(() => new Set());
   const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
   const manage = canEditWeeklyPattern(session.role);
@@ -91,6 +92,7 @@ export function CalendarScreen() {
       ),
     [people, templates, today],
   );
+  const weeklyShiftCount = patternGroups.reduce((sum, group) => sum + group.shifts.length, 0);
   const myTemplates = useMemo(
     () =>
       templates
@@ -328,10 +330,28 @@ export function CalendarScreen() {
         </section>
       ) : null}
       {manage ? (
-        <section className="panel" data-testid="repeating-shifts">
-          <h2>Repeating shifts</h2>
-          {patternGroups.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
-          <ul className="list">
+        <section className="panel" data-testid="repeating-shifts" data-open={patternsOpen ? "true" : "false"}>
+          <button
+            type="button"
+            className="collapse-toggle"
+            data-testid="repeating-shifts-toggle"
+            aria-expanded={patternsOpen}
+            onClick={() => setPatternsOpen((open) => !open)}
+          >
+            <span className="collapse-title handover-title">Repeating shifts</span>
+            <span className="collapse-summary">
+              <span className="notice-summary">
+                {weeklyShiftCount === 0
+                  ? "No weekly shifts yet."
+                  : weeklyShiftCount === 1
+                    ? "1 weekly shift"
+                    : `${weeklyShiftCount} weekly shifts`}
+              </span>
+              <span aria-hidden="true">{patternsOpen ? "▾" : "▸"}</span>
+            </span>
+          </button>
+          {patternsOpen && patternGroups.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
+          {patternsOpen ? <ul className="list">
             {patternGroups.map((group) => {
               const open = openPatternPeople.has(group.userId);
               const person = people.find((item) => item.id === group.userId);
@@ -392,7 +412,7 @@ export function CalendarScreen() {
                 </li>
               );
             })}
-          </ul>
+          </ul> : null}
         </section>
       ) : null}
       </>
