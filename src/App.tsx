@@ -23,6 +23,7 @@ import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
 import { nameMark } from "./emoji";
 import { groupSeenKey, nextMessageAlert } from "./messagesAlert";
+import { canManageSchedule, roleLabel } from "./roles";
 import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { applyTheme, DEFAULT_COLOR_SCHEME, resolveColorScheme } from "./themes";
@@ -472,7 +473,14 @@ export function App() {
   return (
     <div className="app">
       <header className="top">
-        <strong className="brand">HammondCare</strong>
+        <div className="brand-block">
+          <strong className="brand">HammondCare</strong>
+          {gate.kind === "app" && canManageSchedule((viewPerson ?? gate.session).role) ? (
+            <p className="brand-role" data-testid="header-role">
+              {roleLabel((viewPerson ?? gate.session).role)}
+            </p>
+          ) : null}
+        </div>
         {gate.kind === "app" ? (
           <button
             type="button"
