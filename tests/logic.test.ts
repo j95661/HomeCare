@@ -3,7 +3,8 @@ import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount, type Account
 import { canSendOtp, checkOtpCode, hashOtp, OTP_TTL_MS } from "../functions/src/logic/otp";
 import { DEFAULT_PASSWORD_MAX_AGE_DAYS, expiresAt, validatePassword } from "../functions/src/logic/password";
 import { buildMulticast } from "../functions/src/logic/push";
-import { careTeamRecipients, directRecipients, medicationRecipients, messageRecipients, noticeRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
+import { coverageMessageText } from "../functions/src/logic/messages";
+import { careTeamRecipients, coverageRecipients, directRecipients, medicationRecipients, messageRecipients, noticeRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
 import { canAssignRole, canRevoke, isProtectedAccount } from "../functions/src/logic/roles";
 import { applyAcceptance } from "../functions/src/logic/shifts";
 import { isWithinWindow, zonedParts } from "../functions/src/logic/time";
@@ -181,7 +182,20 @@ describe("reminders and push", () => {
     ];
     expect(careTeamRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "sam"]);
     expect(noticeRecipients(roster, "lead").map((user) => user.uid)).toEqual(["pat", "admin", "super", "sam"]);
+    expect(coverageRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "admin", "super", "sam"]);
     expect(directRecipients(roster, "pat", ["pat", "hold", "admin"])).toEqual(["admin"]);
+  });
+
+  it("writes a care-team message for a shift swap", () => {
+    expect(
+      coverageMessageText({ action: "requested", type: "swap", date: "2026-10-07", start: "08:00", end: "16:00" }),
+    ).toBe("Requested a shift swap for Wed, Oct 7, 8:00 AM–4:00 PM.");
+    expect(
+      coverageMessageText({ action: "accepted", type: "swap", date: "2026-10-07", start: "08:00", end: "16:00" }),
+    ).toBe("Took the shift swap for Wed, Oct 7, 8:00 AM–4:00 PM.");
+    expect(
+      coverageMessageText({ action: "cancelled", type: "day_off", date: "2026-10-09", start: "16:00", end: "22:00" }),
+    ).toBe("Cancelled the day off for Fri, Oct 9, 4:00 PM–10:00 PM.");
   });
 
   it("builds an audible visible push, with the medication prompt kept on screen", () => {

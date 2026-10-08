@@ -21,6 +21,7 @@ import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
 import { nameMark } from "./emoji";
+import { groupSeenKey, nextMessageAlert } from "./messagesAlert";
 import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { applyTheme, resolveColorScheme } from "./themes";
@@ -95,6 +96,7 @@ export function App() {
   const [shiftError, setShiftError] = useState("");
   const [viewId, setViewId] = useState<string | null>(null);
   const [viewPerson, setViewPerson] = useState<ViewIdentity | null>(null);
+  const [messagesUnread, setMessagesUnread] = useState(false);
   const skipSignOut = useRef(false);
   const viewIdRef = useRef<string | null>(null);
   const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
@@ -177,6 +179,29 @@ export function App() {
     setViewOnly(Boolean(viewPerson));
     return () => setViewOnly(false);
   }, [viewPerson]);
+
+  const viewerId = viewPerson?.uid || (gate.kind === "app" ? gate.session.uid : "");
+  const onCareTeam = route.view === "messages" && (!route.thread || route.thread === "group");
+  useEffect(() => {
+    if (!viewerId) {
+      setMessagesUnread(false);
+      return;
+    }
+    return onSnapshot(doc(db, "groupThread/main"), (snap) => {
+      const at = snap.get("lastMessageAt");
+      const latestAt = typeof at?.toMillis === "function" ? at.toMillis() : 0;
+      const seenAt = Number(localStorage.getItem(groupSeenKey(viewerId)) || 0);
+      const next = nextMessageAlert({
+        latestAt,
+        senderId: String(snap.get("lastSenderId") || ""),
+        viewerId,
+        seenAt,
+        onMessages: onCareTeam,
+      });
+      if (next.seenAt !== seenAt) localStorage.setItem(groupSeenKey(viewerId), String(next.seenAt));
+      setMessagesUnread(next.unread);
+    });
+  }, [viewerId, onCareTeam]);
 
   useEffect(() => {
     void getRedirectResult(auth).catch((error) => {
@@ -527,8 +552,15 @@ export function App() {
           <button type="button" data-testid="nav-calendar" className={route.view === "calendar" ? "primary" : ""} onClick={() => go({ view: "calendar", thread: null, guide: null })}>
             Calendar
           </button>
-          <button type="button" data-testid="nav-messages" className={route.view === "messages" ? "primary" : ""} onClick={() => go({ view: "messages", guide: null })}>
+          <button
+            type="button"
+            data-testid="nav-messages"
+            data-unread={messagesUnread ? "true" : "false"}
+            className={route.view === "messages" ? "primary" : ""}
+            onClick={() => go({ view: "messages", guide: null })}
+          >
             Messages
+            {messagesUnread ? <span className="nav-dot" data-testid="messages-unread" /> : null}
           </button>
           <button type="button" data-testid="nav-more" className={route.view === "more" ? "primary" : ""} onClick={() => go({ view: "more", thread: null, guide: null })}>
             More

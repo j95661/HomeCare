@@ -62,6 +62,11 @@ export function noticeRecipients(users: ReminderUser[], senderId: string): Remin
   return messageRecipients(users, senderId);
 }
 
+/** A shift swap or day off in Messages reaches every active employee except the sender. */
+export function coverageRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
+  return messageRecipients(users, senderId);
+}
+
 export function directRecipients(users: ReminderUser[], senderId: string, participantIds: string[]): string[] {
   const allowed = new Set(messageRecipients(users, senderId).map((user) => user.uid));
   return participantIds.filter((uid) => allowed.has(uid));

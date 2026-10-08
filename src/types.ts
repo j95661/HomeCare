@@ -141,5 +141,7 @@ export type ChatMessage = {
   senderName: string;
   text: string;
   imagePath?: string;
+  kind?: string;
+  coverageType?: "swap" | "day_off";
   createdAt?: { toDate: () => Date };
 };
