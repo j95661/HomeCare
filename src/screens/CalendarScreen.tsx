@@ -468,7 +468,7 @@ export function CalendarScreen() {
 
       {manage && mode === "month" ? (
         <div className="month">
-          <h2 className="month-name" data-testid="calendar-month">{formatMonth(anchor)}</h2>
+          <h2 className="month-name" data-testid="calendar-month-name">{formatMonth(anchor)}</h2>
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
             <span key={label} className="dow">
               {label}
