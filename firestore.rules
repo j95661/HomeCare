@@ -97,6 +97,27 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function validTemplate(data) {
+      return data.keys().hasOnly(['userId', 'userName', 'weekday', 'start', 'end', 'effectiveFrom', 'effectiveUntil', 'createdBy', 'updatedAt'])
+        && data.userId is string
+        && data.userId.size() > 0
+        && data.userName is string
+        && data.userName.size() > 0
+        && data.userName.size() <= 80
+        && data.weekday is int
+        && data.weekday >= 0
+        && data.weekday <= 6
+        && isTime(data.start)
+        && isTime(data.end)
+        && data.start < data.end
+        && isDate(data.effectiveFrom)
+        && (data.effectiveUntil == '' || (isDate(data.effectiveUntil) && data.effectiveFrom < data.effectiveUntil))
+        && data.createdBy is string
+        && data.updatedAt == request.time
+        && exists(userPath(data.userId))
+        && get(userPath(data.userId)).data.active == true;
+    }
+
     function validShift(data) {
       return data.keys().hasOnly(['userId', 'userName', 'date', 'start', 'end', 'createdBy', 'updatedAt'])
         && data.userId is string
@@ -199,6 +220,22 @@ service cloud.firestore {
         && validShift(request.resource.data)
         && request.resource.data.createdBy == resource.data.createdBy;
       allow delete: if isTeamLeadOrAbove();
+    }
+
+    match /shiftTemplates/{id} {
+      allow read: if isActiveUser();
+      allow create: if isTeamLeadOrAbove()
+        && validTemplate(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isTeamLeadOrAbove()
+        && validTemplate(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isTeamLeadOrAbove();
+    }
+
+    match /shiftExceptions/{id} {
+      allow read: if isActiveUser();
+      allow write: if false;
     }
 
     match /shiftRequests/{id} {

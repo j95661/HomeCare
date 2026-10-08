@@ -78,6 +78,7 @@ export type ShiftRequest = {
   id: string;
   type: "swap" | "day_off";
   shiftId: string;
+  templateId?: string;
   shiftDate: string;
   shiftStart: string;
   shiftEnd: string;
@@ -86,6 +87,7 @@ export type ShiftRequest = {
   status: "pending" | "accepted" | "declined" | "cancelled";
   acceptedBy?: string | null;
   acceptedByName?: string | null;
+  patternUpdated?: boolean;
   history?: { action: string; uid: string; name: string; at: string }[];
 };
 

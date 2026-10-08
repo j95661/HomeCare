@@ -17,22 +17,36 @@ import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { canManageSchedule } from "../roles";
+import {
+  WEEKDAY_NAMES,
+  dayExceptionLabel,
+  exceptionFromData,
+  exceptionLabel,
+  isOpenTemplate,
+  resolveRange,
+  templateFromData,
+  weekdayOf,
+  type ShiftException,
+  type ShiftTemplate,
+} from "../schedule";
 import { useSession } from "../session";
 import { addDays, addMonths, formatClock, formatDay, formatIso, monthGrid, startOfWeek, todayISO } from "../time";
-import type { Person, Shift, ShiftRequest } from "../types";
+import type { Person, ShiftRequest } from "../types";
 
 export function CalendarScreen() {
   const session = useSession();
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
   const [anchor, setAnchor] = useState(() => todayISO(session.timezone));
-  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+  const [exceptions, setExceptions] = useState<ShiftException[]>([]);
   const [requests, setRequests] = useState<ShiftRequest[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ userId: "", date: anchor, start: "08:00", end: "16:00" });
+  const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
   const manage = canManageSchedule(session.role);
+  const today = todayISO(session.timezone);
 
   const range = useMemo(() => {
     if (mode === "day") return { start: anchor, end: anchor };
@@ -44,17 +58,34 @@ export function CalendarScreen() {
     return { start: grid[0]?.date ?? anchor, end: grid[grid.length - 1]?.date ?? anchor };
   }, [mode, anchor]);
 
+  const shifts = useMemo(
+    () => resolveRange(range.start, range.end, templates, exceptions),
+    [range.start, range.end, templates, exceptions],
+  );
+
+  const openTemplates = useMemo(
+    () =>
+      templates
+        .filter((template) => isOpenTemplate(template, today))
+        .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start) || a.userName.localeCompare(b.userName)),
+    [templates, today],
+  );
+
   useEffect(() => {
     const unsubs = [
       onSnapshot(
+        collection(db, "shiftTemplates"),
+        (snap) => setTemplates(snap.docs.map((item) => templateFromData(item.id, item.data() as Record<string, unknown>))),
+        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+      ),
+      onSnapshot(
         query(
-          collection(db, "shifts"),
+          collection(db, "shiftExceptions"),
           where("date", ">=", range.start),
           where("date", "<=", range.end),
           orderBy("date"),
-          orderBy("start"),
         ),
-        (snap) => setShifts(snap.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Shift, "id">) }))),
+        (snap) => setExceptions(snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>))),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
@@ -79,21 +110,27 @@ export function CalendarScreen() {
     else setAnchor((current) => addDays(current, mode === "week" ? direction * 7 : direction));
   }
 
-  async function saveShift() {
+  async function savePattern() {
     const person = people.find((item) => item.id === form.userId);
     if (!person) {
       setError("Choose a person.");
       return;
     }
+    if (form.start >= form.end) {
+      setError("The shift must end after it starts.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await addDoc(collection(db, "shifts"), {
+      await addDoc(collection(db, "shiftTemplates"), {
         userId: person.id,
         userName: person.displayName,
-        date: form.date,
+        weekday: form.weekday,
         start: form.start,
         end: form.end,
+        effectiveFrom: "2000-01-01",
+        effectiveUntil: "",
         createdBy: session.uid,
         updatedAt: serverTimestamp(),
       });
@@ -105,11 +142,11 @@ export function CalendarScreen() {
     }
   }
 
-  async function reassign(shift: Shift, userId: string) {
+  async function changePerson(template: ShiftTemplate, userId: string) {
     const person = people.find((item) => item.id === userId);
-    if (!person) return;
+    if (!person || person.id === template.userId) return;
     try {
-      await updateDoc(doc(db, "shifts", shift.id), {
+      await updateDoc(doc(db, "shiftTemplates", template.id), {
         userId: person.id,
         userName: person.displayName,
         updatedAt: serverTimestamp(),
@@ -119,19 +156,19 @@ export function CalendarScreen() {
     }
   }
 
-  async function removeShift(id: string) {
+  async function removePattern(id: string) {
     try {
-      await deleteDoc(doc(db, "shifts", id));
+      await deleteDoc(doc(db, "shiftTemplates", id));
     } catch (err) {
       setError(errorText(err));
     }
   }
 
-  async function requestCoverage(shiftId: string, type: "swap" | "day_off") {
+  async function requestCoverage(templateId: string, date: string, type: "swap" | "day_off") {
     setBusy(true);
     setError("");
     try {
-      await call("requestShiftCoverage", { shiftId, type });
+      await call("requestShiftCoverage", { templateId, date, type });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -162,6 +199,18 @@ export function CalendarScreen() {
     }
   }
 
+  async function makePattern(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await call("makeWeeklyPattern", { id });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
   const days = mode === "week" ? Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchor), index)) : mode === "day" ? [anchor] : [];
 
@@ -169,7 +218,7 @@ export function CalendarScreen() {
     <div className="stack">
       <div className="split">
         {(["day", "week", "month"] as const).map((item) => (
-          <button key={item} type="button" className={mode === item ? "primary" : ""} onClick={() => setMode(item)}>
+          <button key={item} type="button" className={mode === item ? "primary" : ""} data-testid={`calendar-${item}`} onClick={() => setMode(item)}>
             {item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
@@ -178,7 +227,7 @@ export function CalendarScreen() {
         <button type="button" onClick={() => move(-1)}>
           Previous
         </button>
-        <button type="button" onClick={() => setAnchor(todayISO(session.timezone))}>
+        <button type="button" onClick={() => setAnchor(today)}>
           Today
         </button>
         <button type="button" onClick={() => move(1)}>
@@ -187,14 +236,16 @@ export function CalendarScreen() {
       </div>
       <p className="meta">{formatDay(anchor)}</p>
       {manage ? (
-        <button type="button" onClick={() => setShowForm((open) => !open)}>
-          {showForm ? "Close form" : "Add shift"}
+        <button type="button" data-testid="weekly-pattern" onClick={() => setShowForm((open) => !open)}>
+          {showForm ? "Close form" : "Weekly pattern"}
         </button>
       ) : null}
       {showForm ? (
         <section className="panel">
+          <h2>Weekly pattern</h2>
+          <p className="hint">This repeats every week. A swap or day off changes one date only.</p>
           <Field label="Person">
-            <select value={form.userId} onChange={(event) => setForm({ ...form, userId: event.target.value })}>
+            <select data-testid="pattern-person" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.target.value })}>
               <option value="">Choose</option>
               {people.map((person) => (
                 <option key={person.id} value={person.id}>
@@ -203,18 +254,55 @@ export function CalendarScreen() {
               ))}
             </select>
           </Field>
-          <Field label="Date">
-            <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+          <Field label="Weekday">
+            <select
+              data-testid="pattern-weekday"
+              value={form.weekday}
+              onChange={(event) => setForm({ ...form, weekday: Number(event.target.value) })}
+            >
+              {WEEKDAY_NAMES.map((name, index) => (
+                <option key={name} value={index}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Start">
-            <input type="time" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} />
+            <input data-testid="pattern-start" type="time" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} />
           </Field>
           <Field label="End">
-            <input type="time" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} />
+            <input data-testid="pattern-end" type="time" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} />
           </Field>
-          <button type="button" className="primary" disabled={busy} onClick={() => void saveShift()}>
-            Save shift
+          <button type="button" className="primary" data-testid="pattern-save" disabled={busy} onClick={() => void savePattern()}>
+            Save weekly shift
           </button>
+        </section>
+      ) : null}
+      {manage ? (
+        <section className="panel">
+          <h2>Repeating shifts</h2>
+          {openTemplates.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
+          <ul className="list">
+            {openTemplates.map((template) => (
+              <li key={template.id} className="card" data-testid="pattern-row">
+                <strong>
+                  {WEEKDAY_NAMES[template.weekday] ?? "Weekday"} · {formatClock(template.start)} – {formatClock(template.end)}
+                </strong>
+                <Field label="Person">
+                  <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
+                    {people.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {withEmoji(person.displayName, person.emoji)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <button type="button" onClick={() => void removePattern(template.id)}>
+                  Remove weekly shift
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -226,69 +314,91 @@ export function CalendarScreen() {
             </span>
           ))}
           {monthGrid(anchor).map((cell) => {
-            const count = shifts.filter((shift) => shift.date === cell.date).length;
+            const dayShifts = shifts.filter((shift) => shift.date === cell.date);
+            const mark = dayExceptionLabel(dayShifts);
             return (
               <button
                 key={cell.date}
                 type="button"
-                className={cell.inMonth ? "day-cell" : "day-cell muted-cell"}
+                data-testid={`day-${cell.date}`}
+                data-exception={mark ? "true" : "false"}
+                className={["day-cell", cell.inMonth ? "" : "muted-cell", mark ? "exception" : ""].filter(Boolean).join(" ")}
                 onClick={() => {
                   setAnchor(cell.date);
                   setMode("day");
                 }}
               >
                 {Number(cell.date.slice(8))}
-                {count > 0 ? <span className="count">{count}</span> : null}
+                {mark ? (
+                  <span className="exception-mark" data-testid="month-exception">
+                    {mark}
+                  </span>
+                ) : null}
+                {dayShifts.length > 0 ? <span className="count">{dayShifts.length}</span> : null}
               </button>
             );
           })}
         </div>
       ) : (
-        days.map((date) => (
-          <section key={date} className="panel">
-            <h2>{formatDay(date)}</h2>
-            {shifts.filter((shift) => shift.date === date).length === 0 ? <Empty>No shifts.</Empty> : null}
-            <ul className="list">
-              {shifts
-                .filter((shift) => shift.date === date)
-                .map((shift) => (
-                  <li key={shift.id} className="card">
+        days.map((date) => {
+          const dayShifts = shifts.filter((shift) => shift.date === date);
+          const mark = dayExceptionLabel(dayShifts);
+          return (
+            <section key={date} className={mark ? "panel exception" : "panel"} data-testid={`schedule-day-${date}`}>
+              <h2>{formatDay(date)}</h2>
+              {mark ? (
+                <span className="badge" data-testid="day-exception">
+                  {mark}
+                </span>
+              ) : null}
+              {dayShifts.length === 0 ? <Empty>No shifts.</Empty> : null}
+              <ul className="list">
+                {dayShifts.map((shift) => (
+                  <li
+                    key={shift.id}
+                    className={shift.source === "exception" ? "card exception" : "card"}
+                    data-testid="resolved-shift"
+                    data-source={shift.source}
+                    data-kind={shift.kind}
+                    data-date={shift.date}
+                    data-user={shift.userName}
+                  >
+                    {shift.source === "exception" ? (
+                      <span className="badge" data-testid="exception-badge">
+                        {exceptionLabel(shift.kind)}
+                      </span>
+                    ) : null}
                     <strong>{withEmoji(shift.userName, people.find((person) => person.id === shift.userId)?.emoji)}</strong>
                     <p>
                       {formatClock(shift.start)} – {formatClock(shift.end)}
                       {people.find((person) => person.id === shift.userId)?.onShift ? " · On shift now" : ""}
                     </p>
-                    {manage ? (
-                      <Field label="Reassign">
-                        <select value={shift.userId} onChange={(event) => void reassign(shift, event.target.value)}>
-                          {people.map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {withEmoji(person.displayName, person.emoji)}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    ) : null}
-                    {manage ? (
-                      <button type="button" onClick={() => void removeShift(shift.id)}>
-                        Remove
-                      </button>
-                    ) : null}
-                    {shift.userId === session.uid ? (
+                    {shift.userId === session.uid && shift.templateId ? (
                       <div className="split">
-                        <button type="button" disabled={busy || pendingIds.has(shift.id)} onClick={() => void requestCoverage(shift.id, "swap")}>
+                        <button
+                          type="button"
+                          data-testid="request-swap"
+                          disabled={busy || pendingIds.has(shift.id)}
+                          onClick={() => void requestCoverage(shift.templateId, shift.date, "swap")}
+                        >
                           Request swap
                         </button>
-                        <button type="button" disabled={busy || pendingIds.has(shift.id)} onClick={() => void requestCoverage(shift.id, "day_off")}>
+                        <button
+                          type="button"
+                          data-testid="request-day-off"
+                          disabled={busy || pendingIds.has(shift.id)}
+                          onClick={() => void requestCoverage(shift.templateId, shift.date, "day_off")}
+                        >
                           Request day off
                         </button>
                       </div>
                     ) : null}
                   </li>
                 ))}
-            </ul>
-          </section>
-        ))
+              </ul>
+            </section>
+          );
+        })
       )}
 
       <section className="panel">
@@ -296,10 +406,11 @@ export function CalendarScreen() {
         {requests.length === 0 ? <Empty>No requests yet.</Empty> : null}
         <ul className="list">
           {requests.map((item) => (
-            <li key={item.id} className="card">
+            <li key={item.id} className="card" data-testid="coverage-request" data-status={item.status} data-type={item.type}>
               <strong>{item.type === "day_off" ? "Day off" : "Shift swap"}</strong>
               <p>
-                {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} · {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
+                {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} ·{" "}
+                {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
               </p>
               <p className="meta">
                 {item.status}
@@ -307,6 +418,7 @@ export function CalendarScreen() {
                   ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
                   : ""}
               </p>
+              {item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
               <ul className="history">
                 {(item.history ?? []).map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>
@@ -315,13 +427,18 @@ export function CalendarScreen() {
                 ))}
               </ul>
               {item.status === "pending" && item.requesterId !== session.uid ? (
-                <button type="button" className="primary" disabled={busy} onClick={() => void accept(item.id)}>
+                <button type="button" className="primary" data-testid="accept-coverage" disabled={busy} onClick={() => void accept(item.id)}>
                   Accept
                 </button>
               ) : null}
               {item.status === "pending" && item.requesterId === session.uid ? (
                 <button type="button" disabled={busy} onClick={() => void cancel(item.id)}>
                   Cancel request
+                </button>
+              ) : null}
+              {manage && item.type === "swap" && item.status === "accepted" && item.templateId && !item.patternUpdated ? (
+                <button type="button" className="primary" data-testid="make-weekly-pattern" disabled={busy} onClick={() => void makePattern(item.id)}>
+                  Make this the new weekly pattern
                 </button>
               ) : null}
             </li>

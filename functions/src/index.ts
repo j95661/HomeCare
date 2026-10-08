@@ -23,8 +23,17 @@ import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
-import { canClearUserEmoji, isRole, type Role } from "./logic/roles";
+import { canClearUserEmoji, canManageSchedule, isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
+import {
+  exceptionFromData,
+  planCoverageWrite,
+  promoteSwap,
+  resolveDay,
+  shiftKey,
+  templateApplies,
+  templateFromData,
+} from "./logic/schedule";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { zonedParts } from "./logic/time";
 
@@ -676,31 +685,48 @@ export const dispatchMedicationReminders = onSchedule(
   },
 );
 
+function isIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export const requestShiftCoverage = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   const body = asObject(request.data);
-  const shiftId = String(body.shiftId ?? "");
+  const templateId = String(body.templateId ?? "");
+  const date = String(body.date ?? "");
   const type = body.type === "day_off" ? "day_off" : body.type === "swap" ? "swap" : "";
-  if (!shiftId || !type) throw new HttpsError("invalid-argument", "Choose a shift and a request type.");
-  const shiftSnap = await db.doc(`shifts/${shiftId}`).get();
-  if (!shiftSnap.exists) throw new HttpsError("not-found", "That shift was not found.");
-  if (shiftSnap.get("userId") !== caller.uid) {
+  if (!templateId || !isIsoDate(date) || !type) {
+    throw new HttpsError("invalid-argument", "Choose a shift and a request type.");
+  }
+  const templateSnap = await db.doc(`shiftTemplates/${templateId}`).get();
+  if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+  const template = templateFromData(templateId, templateSnap.data() as Record<string, unknown>);
+  if (!templateApplies(template, date)) {
+    throw new HttpsError("failed-precondition", "That weekly shift does not cover this date.");
+  }
+  const exceptionSnap = await db.collection("shiftExceptions").where("templateId", "==", templateId).where("date", "==", date).get();
+  const exceptions = exceptionSnap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+  const resolved = resolveDay(date, [template], exceptions).find((shift) => shift.templateId === templateId);
+  if (!resolved || resolved.userId !== caller.uid) {
     throw new HttpsError("permission-denied", "You can only request coverage for your own shift.");
   }
+  const shiftId = shiftKey(templateId, date);
   const open = await db.collection("shiftRequests").where("shiftId", "==", shiftId).where("status", "==", "pending").limit(1).get();
   if (!open.empty) throw new HttpsError("failed-precondition", "There is already an open request for that shift.");
   const at = new Date().toISOString();
   const ref = await db.collection("shiftRequests").add({
     type,
     shiftId,
-    shiftDate: shiftSnap.get("date"),
-    shiftStart: shiftSnap.get("start"),
-    shiftEnd: shiftSnap.get("end"),
+    templateId,
+    shiftDate: date,
+    shiftStart: resolved.start,
+    shiftEnd: resolved.end,
     requesterId: caller.uid,
     requesterName: caller.displayName,
     status: "pending",
     acceptedBy: null,
     acceptedByName: null,
+    patternUpdated: false,
     requestedAt: FieldValue.serverTimestamp(),
     resolvedAt: null,
     history: [{ action: "requested", uid: caller.uid, name: caller.displayName, at }],
@@ -713,7 +739,7 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
     users.filter((user) => user.uid !== caller.uid).map((user) => user.uid),
     {
       title: "Coverage request",
-      body: `${withEmoji(caller.displayName, caller.emoji)} requested ${label} on ${shiftSnap.get("date")} ${shiftSnap.get("start")}–${shiftSnap.get("end")}.`,
+      body: `${withEmoji(caller.displayName, caller.emoji)} requested ${label} on ${date} ${resolved.start}–${resolved.end}.`,
       link: "/?view=calendar",
       data: { type: "swap", requestId: ref.id, title: "Coverage request", body: caller.displayName },
     },
@@ -721,15 +747,28 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
   return { id: ref.id };
 });
 
-async function loadRequest(id: string): Promise<ShiftRequestRecord & { refPath: string; shiftId: string }> {
+type LoadedRequest = ShiftRequestRecord & {
+  templateId: string;
+  shiftDate: string;
+  acceptedBy: string;
+  acceptedByName: string;
+  patternUpdated: boolean;
+};
+
+async function loadRequest(id: string): Promise<LoadedRequest> {
   const snap = await db.doc(`shiftRequests/${id}`).get();
   if (!snap.exists) throw new HttpsError("not-found", "That request was not found.");
+  const status = snap.get("status");
   return {
-    refPath: snap.ref.path,
-    type: snap.get("type"),
-    shiftId: String(snap.get("shiftId")),
-    requesterId: String(snap.get("requesterId")),
-    status: snap.get("status"),
+    type: snap.get("type") === "day_off" ? "day_off" : "swap",
+    shiftId: String(snap.get("shiftId") ?? ""),
+    templateId: String(snap.get("templateId") ?? ""),
+    shiftDate: String(snap.get("shiftDate") ?? ""),
+    requesterId: String(snap.get("requesterId") ?? ""),
+    status: status === "accepted" || status === "declined" || status === "cancelled" || status === "pending" ? status : "pending",
+    acceptedBy: String(snap.get("acceptedBy") ?? ""),
+    acceptedByName: String(snap.get("acceptedByName") ?? ""),
+    patternUpdated: snap.get("patternUpdated") === true,
     history: (snap.get("history") as ShiftRequestRecord["history"]) || [],
   };
 }
@@ -739,14 +778,27 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
   const id = String(asObject(request.data).id ?? "");
   if (!id) throw new HttpsError("invalid-argument", "Choose a request.");
   const current = await loadRequest(id);
-  const shiftSnap = await db.doc(`shifts/${current.shiftId}`).get();
-  if (!shiftSnap.exists) throw new HttpsError("not-found", "That shift was not found.");
+  if (!current.templateId || !isIsoDate(current.shiftDate)) {
+    throw new HttpsError("failed-precondition", "That request is not tied to a weekly shift.");
+  }
+  const templateRef = db.doc(`shiftTemplates/${current.templateId}`);
+  const templateSnap = await templateRef.get();
+  if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+  const template = templateFromData(current.templateId, templateSnap.data() as Record<string, unknown>);
+  const exceptionSnap = await db
+    .collection("shiftExceptions")
+    .where("templateId", "==", current.templateId)
+    .where("date", "==", current.shiftDate)
+    .get();
+  const exceptions = exceptionSnap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+  const resolved = resolveDay(current.shiftDate, [template], exceptions).find((shift) => shift.templateId === current.templateId);
+  if (!resolved) throw new HttpsError("not-found", "That shift was not found.");
   const shift: ShiftRecord = {
-    userId: String(shiftSnap.get("userId")),
-    userName: String(shiftSnap.get("userName")),
-    date: String(shiftSnap.get("date")),
-    start: String(shiftSnap.get("start")),
-    end: String(shiftSnap.get("end")),
+    userId: resolved.userId,
+    userName: resolved.userName,
+    date: current.shiftDate,
+    start: resolved.start,
+    end: resolved.end,
   };
   let next: ReturnType<typeof applyAcceptance>;
   try {
@@ -756,20 +808,55 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
   }
   await db.runTransaction(async (tx) => {
     const requestRef = db.doc(`shiftRequests/${id}`);
-    const shiftRef = db.doc(`shifts/${current.shiftId}`);
     const freshRequest = await tx.get(requestRef);
-    const freshShift = await tx.get(shiftRef);
+    const freshTemplate = await tx.get(templateRef);
+    const freshExceptions = await tx.get(
+      db.collection("shiftExceptions").where("templateId", "==", current.templateId).where("date", "==", current.shiftDate),
+    );
+    if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
     if (freshRequest.get("status") !== "pending") {
       throw new HttpsError("failed-precondition", "That request is no longer open.");
     }
-    if (freshShift.get("userId") !== current.requesterId) {
+    const fresh = templateFromData(current.templateId, freshTemplate.data() as Record<string, unknown>);
+    const freshList = freshExceptions.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+    const freshResolved = resolveDay(current.shiftDate, [fresh], freshList).find((item) => item.templateId === current.templateId);
+    if (!freshResolved || freshResolved.userId !== current.requesterId) {
       throw new HttpsError("failed-precondition", "That shift has already changed.");
     }
-    tx.update(shiftRef, {
-      userId: next.shift.userId,
-      userName: next.shift.userName,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    const existing = freshExceptions.docs.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
+    let write: "create" | "update";
+    try {
+      write = planCoverageWrite({
+        templateUserId: fresh.userId,
+        exceptionUserId: existing ? String(existing.get("userId") ?? "") : null,
+        requesterId: current.requesterId,
+      });
+    } catch (error) {
+      throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not accept.");
+    }
+    const kind = freshRequest.get("type") === "day_off" ? "day_off" : "swap";
+    if (write === "update" && existing) {
+      tx.update(existing.ref, {
+        userId: caller.uid,
+        userName: caller.displayName,
+        kind,
+        requestId: id,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      tx.set(db.collection("shiftExceptions").doc(), {
+        date: current.shiftDate,
+        templateId: current.templateId,
+        kind,
+        userId: caller.uid,
+        userName: caller.displayName,
+        start: fresh.start,
+        end: fresh.end,
+        requestId: id,
+        createdBy: caller.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
     tx.update(requestRef, {
       status: "accepted",
       acceptedBy: caller.uid,
@@ -785,6 +872,74 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
     data: { type: "swap", requestId: id, title: "Coverage accepted", body: caller.displayName },
   });
   return { accepted: true };
+});
+
+export const makeWeeklyPattern = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  if (!canManageSchedule(caller.role)) {
+    throw new HttpsError("permission-denied", "Only a team lead or admin can update the weekly pattern.");
+  }
+  const id = String(asObject(request.data).id ?? "");
+  if (!id) throw new HttpsError("invalid-argument", "Choose a request.");
+  const current = await loadRequest(id);
+  if (current.type !== "swap" || current.status !== "accepted") {
+    throw new HttpsError("failed-precondition", "Only an accepted swap can become the weekly pattern.");
+  }
+  if (current.patternUpdated) throw new HttpsError("failed-precondition", "That swap is already the weekly pattern.");
+  if (!current.templateId || !current.acceptedBy) {
+    throw new HttpsError("failed-precondition", "That request is not tied to a weekly shift.");
+  }
+  const templateRef = db.doc(`shiftTemplates/${current.templateId}`);
+  const templateSnap = await templateRef.get();
+  if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+  await db.runTransaction(async (tx) => {
+    const requestRef = db.doc(`shiftRequests/${id}`);
+    const freshTemplate = await tx.get(templateRef);
+    const freshRequest = await tx.get(requestRef);
+    if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+    if (freshRequest.get("status") !== "accepted" || freshRequest.get("type") !== "swap") {
+      throw new HttpsError("failed-precondition", "Only an accepted swap can become the weekly pattern.");
+    }
+    if (freshRequest.get("patternUpdated") === true) {
+      throw new HttpsError("failed-precondition", "That swap is already the weekly pattern.");
+    }
+    const acceptorId = String(freshRequest.get("acceptedBy") ?? "");
+    const acceptorName = String(freshRequest.get("acceptedByName") ?? "");
+    if (!acceptorId) throw new HttpsError("failed-precondition", "That swap has no one to copy onto the weekly pattern.");
+    let plan: ReturnType<typeof promoteSwap>;
+    try {
+      plan = promoteSwap({
+        template: templateFromData(current.templateId, freshTemplate.data() as Record<string, unknown>),
+        shiftDate: String(freshRequest.get("shiftDate") ?? ""),
+        acceptorId,
+        acceptorName,
+        alreadyPromoted: false,
+      });
+    } catch (error) {
+      throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not update the weekly pattern.");
+    }
+    const history = (freshRequest.get("history") as ShiftRequestRecord["history"]) || [];
+    tx.update(templateRef, {
+      effectiveUntil: plan.effectiveUntil,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(db.collection("shiftTemplates").doc(), {
+      userId: plan.next.userId,
+      userName: plan.next.userName,
+      weekday: plan.next.weekday,
+      start: plan.next.start,
+      end: plan.next.end,
+      effectiveFrom: plan.next.effectiveFrom,
+      effectiveUntil: plan.next.effectiveUntil,
+      createdBy: caller.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(requestRef, {
+      patternUpdated: true,
+      history: [...history, { action: "weekly pattern", uid: caller.uid, name: caller.displayName, at: new Date().toISOString() }],
+    });
+  });
+  return { updated: true };
 });
 
 export const cancelShiftRequest = onCall(callable, async (request) => {

@@ -170,21 +170,27 @@ if (process.env.SEED_DEMO === "1") {
     updatedBy: parent,
     updatedAt: FieldValue.serverTimestamp(),
   });
-  await db.doc("shifts/alex-today").set({
+  const [shiftYear, shiftMonth, shiftDay] = now.date.split("-").map(Number);
+  const weekday = new Date(Date.UTC(shiftYear, shiftMonth - 1, shiftDay)).getUTCDay();
+  await db.doc("shiftTemplates/alex-weekday").set({
     userId: alex,
     userName: "Alex",
-    date: now.date,
+    weekday,
     start: "08:00",
     end: "16:00",
+    effectiveFrom: "2000-01-01",
+    effectiveUntil: "",
     createdBy: lead,
     updatedAt: FieldValue.serverTimestamp(),
   });
-  await db.doc("shifts/sam-today").set({
+  await db.doc("shiftTemplates/sam-weekday").set({
     userId: sam,
     userName: "Sam",
-    date: now.date,
+    weekday,
     start: "16:00",
     end: "22:00",
+    effectiveFrom: "2000-01-01",
+    effectiveUntil: "",
     createdBy: lead,
     updatedAt: FieldValue.serverTimestamp(),
   });
