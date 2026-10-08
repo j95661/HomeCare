@@ -112,26 +112,40 @@ export function MessagesScreen({ thread, go }: Props) {
   }
 
   function canReach(person: Person): boolean {
-    return person.id !== session.uid && person.active && isAccountEnabled(person) && person.awaitingGoogle !== true;
+    return person.id !== session.uid && person.active && isAccountEnabled(person);
   }
 
   async function openDirect(other: Person) {
-    const id = directThreadId(session.uid, other.id);
-    const ref = doc(db, "threads", id);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
-        type: "direct",
-        participantIds: [session.uid, other.id].sort(),
-        title: other.displayName,
-        lastMessageText: "",
-        lastMessageAt: serverTimestamp(),
-        lastSenderId: "",
-        lastSenderName: "",
-      });
+    setError("");
+    const existing = directs.find(
+      (item) => item.participantIds.includes(session.uid) && item.participantIds.includes(other.id),
+    );
+    if (existing) {
+      setPicking(false);
+      go({ view: "messages", thread: existing.id });
+      return;
     }
-    setPicking(false);
-    go({ view: "messages", thread: id });
+    const id = directThreadId(session.uid, other.id);
+    try {
+      const ref = doc(db, "threads", id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          type: "direct",
+          participantIds: [session.uid, other.id].sort(),
+          title: other.displayName,
+          lastMessageText: "",
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: "",
+          lastSenderName: "",
+        });
+      }
+      setPicking(false);
+      go({ view: "messages", thread: id });
+    } catch (err) {
+      if (isPermissionDenied(err)) session.onDenied();
+      else setError(errorText(err));
+    }
   }
 
   function rememberCursor() {
@@ -240,19 +254,24 @@ export function MessagesScreen({ thread, go }: Props) {
           Care team
         </button>
         <p className="meta">{groupPreview || "Messages for the care team. A lead or parent message also shows on Home."}</p>
-        <button type="button" data-testid="message-one-person" onClick={() => setPicking((open) => !open)}>
-          Message one person
+        <button type="button" data-testid="message-employee" onClick={() => setPicking((open) => !open)}>
+          Message employee
         </button>
         {picking ? (
-          <ul className="list">
-            {people.filter(canReach).map((person) => (
-              <li key={person.id}>
-                <button type="button" data-testid="message-person" onClick={() => void openDirect(person)}>
-                  {withEmoji(person.displayName, person.emoji)}
-                </button>
-              </li>
-            ))}
-          </ul>
+          people.filter(canReach).length === 0 ? (
+            <Empty>No employees to message yet.</Empty>
+          ) : (
+            <ul className="list">
+              {people.filter(canReach).map((person) => (
+                <li key={person.id}>
+                  <button type="button" className="person-choice" data-testid="message-person" onClick={() => void openDirect(person)}>
+                    {withEmoji(person.displayName, person.emoji)}
+                    {person.awaitingGoogle ? <span className="meta">Waiting for Gmail</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
         ) : null}
         <ul className="list">
           {directs.map((item) => (
