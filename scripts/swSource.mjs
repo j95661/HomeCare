@@ -14,23 +14,26 @@ export function serviceWorkerSource(config, version) {
 importScripts("https://www.gstatic.com/firebasejs/${version}/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/${version}/firebase-messaging-compat.js");
 
-firebase.initializeApp(${JSON.stringify(config)});
-const messaging = firebase.messaging();
-
-messaging.onBackgroundMessage((payload) => {
-  const data = payload.data || {};
-  if (payload.notification) return;
-  const title = data.title || "HammondCare";
-  const body = data.body || "";
-  self.registration.showNotification(title, {
-    body,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    silent: false,
-    requireInteraction: data.type === "medication",
-    data,
+try {
+  firebase.initializeApp(${JSON.stringify(config)});
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage((payload) => {
+    const data = payload.data || {};
+    if (payload.notification) return;
+    const title = data.title || "HammondCare";
+    const body = data.body || "";
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      silent: false,
+      requireInteraction: data.type === "medication",
+      data,
+    });
   });
-});
+} catch (error) {
+  // Push setup must not stop the app shell from caching.
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
