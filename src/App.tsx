@@ -26,6 +26,7 @@ import { groupSeenKey, nextMessageAlert } from "./messagesAlert";
 import { canManageSchedule, roleLabel } from "./roles";
 import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
+import { useAccountBackground } from "./background";
 import { applyTheme, DEFAULT_COLOR_SCHEME, resolveColorScheme } from "./themes";
 import { todayISO, zonedParts } from "./time";
 import type { Role, RouteState, Session, ViewName } from "./types";
@@ -52,6 +53,7 @@ type SessionPayload = {
   snoozeMinutes: number;
   colorScheme: string;
   personalColorScheme: string;
+  backgroundImage: string;
 };
 
 const VIEWS = new Set<ViewName>([
@@ -146,6 +148,7 @@ export function App() {
           passwordMaxAgeDays: state.passwordMaxAgeDays,
           colorScheme: resolveColorScheme(state.colorScheme || ""),
           personalColorScheme: state.personalColorScheme || "",
+          backgroundImage: "",
         },
       });
     } catch (error) {
@@ -347,6 +350,19 @@ export function App() {
 
   const appUid = gate.kind === "app" ? gate.session.uid : "";
   const appTimezone = gate.kind === "app" ? gate.session.timezone : "";
+  const accountBackground = gate.kind === "app" ? gate.session.backgroundImage : "";
+  useAccountBackground(accountBackground);
+
+  useEffect(() => {
+    if (!appUid) return;
+    return onSnapshot(doc(db, "users", appUid), (snap) => {
+      const path = String(snap.get("backgroundImage") || "");
+      setGate((current) => {
+        if (current.kind !== "app" || current.session.backgroundImage === path) return current;
+        return { kind: "app", session: { ...current.session, backgroundImage: path } };
+      });
+    });
+  }, [appUid]);
 
   useEffect(() => {
     if (!appUid) {

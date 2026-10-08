@@ -35,6 +35,7 @@ export type Session = {
   passwordMaxAgeDays: number;
   colorScheme: string;
   personalColorScheme: string;
+  backgroundImage: string;
 };
 
 export type Person = {

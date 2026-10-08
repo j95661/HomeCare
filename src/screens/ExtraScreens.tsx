@@ -10,15 +10,19 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
+import { deleteObject, ref } from "firebase/storage";
 import { call, errorText, isPermissionDenied } from "../api";
+import { isOwnBackgroundPath } from "../backgroundPath";
+import { CareImage, uploadCareImage, usePictureDraft } from "../careImage";
 import { additionProblem, answerMatches, randomAddends } from "../deleteCheck";
 import { Empty, Field, Notice } from "../components";
-import { db } from "../firebase";
+import { db, storage } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isAccountEnabled, isSuperAdmin, roleLabel } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import { isSingleEmoji, nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
+import { imageObjectName } from "../media";
 import { applyTheme, COLOR_CHART, COLOR_SCHEMES, parseCustomColor, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
 import { isShiftPeriod, PERIOD_HOURS, SHIFT_PERIODS, type ShiftPeriod } from "../shiftPeriod";
@@ -922,6 +926,115 @@ function schemeSummary(personal: string, teamId: string): { label: string; accen
   return { label: team?.label ?? COLOR_SCHEMES[0].label, accent: teamAccent };
 }
 
+function BackgroundPicker() {
+  const session = useSession();
+  const picture = usePictureDraft();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const current = session.backgroundImage;
+
+  async function save() {
+    if (!picture.file || busy) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    const path = `backgrounds/${session.accountUid}/${imageObjectName(picture.file)}`;
+    if (!isOwnBackgroundPath(session.accountUid, path)) {
+      setError("Choose a picture, GIF, or meme.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    try {
+      await uploadCareImage(path, picture.file);
+      await updateDoc(doc(db, "users", session.accountUid), { backgroundImage: path });
+      if (current && current !== path) {
+        await deleteObject(ref(storage, current)).catch(() => undefined);
+      }
+      picture.clear();
+      setSaved(true);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (busy || !current) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    try {
+      await updateDoc(doc(db, "users", session.accountUid), { backgroundImage: "" });
+      await deleteObject(ref(storage, current)).catch(() => undefined);
+      picture.clear();
+      setSaved(true);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <CollapseSection
+      title="Your background"
+      testId="background-toggle"
+      open={open}
+      onToggle={() => {
+        setOpen((value) => !value);
+        setSaved(false);
+        setError("");
+        picture.clear();
+      }}
+      summary={current ? "Photo" : "None"}
+    >
+      <p className="hint">A picture behind your screens. Only you see it.</p>
+      <input
+        ref={picture.inputRef}
+        className="picture-file"
+        type="file"
+        accept="image/*"
+        data-testid="background-file"
+        aria-label="Choose a background picture"
+        onChange={(event) => {
+          picture.choose(event.target.files?.[0] ?? null);
+          event.target.value = "";
+          setSaved(false);
+        }}
+      />
+      <button type="button" data-testid="background-choose" onClick={() => picture.inputRef.current?.click()}>
+        Choose picture
+      </button>
+      {picture.preview ? (
+        <img className="background-preview" data-testid="background-preview" src={picture.preview} alt="" />
+      ) : current ? (
+        <CareImage path={current} className="background-preview" testId="background-current" />
+      ) : null}
+      {picture.error ? <Notice>{picture.error}</Notice> : null}
+      <button type="button" className="primary" data-testid="background-save" disabled={busy || !picture.file} onClick={() => void save()}>
+        Save background
+      </button>
+      {current ? (
+        <button type="button" data-testid="background-remove" disabled={busy} onClick={() => void remove()}>
+          Remove background
+        </button>
+      ) : null}
+      {saved ? <Notice tone="info">Saved.</Notice> : null}
+      {error ? <Notice>{error}</Notice> : null}
+    </CollapseSection>
+  );
+}
+
 function SchemePicker() {
   const session = useSession();
   const [open, setOpen] = useState(false);
@@ -1177,6 +1290,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
         {withEmoji(session.displayName, session.emoji)} · {roleLabel(session.role)}
       </p>
       <SchemePicker />
+      <BackgroundPicker />
       <EmojiPicker />
       {links
         .filter((link) => link.show)
