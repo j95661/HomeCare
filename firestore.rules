@@ -212,8 +212,8 @@ service cloud.firestore {
 
     match /medications/{id} {
       allow read: if isActiveUser();
-      allow create, update: if isAdmin() && validMedication(request.resource.data);
-      allow delete: if isAdmin();
+      allow create, update: if isTeamLeadOrAbove() && validMedication(request.resource.data);
+      allow delete: if isTeamLeadOrAbove();
     }
 
     match /medicationLogs/{id} {

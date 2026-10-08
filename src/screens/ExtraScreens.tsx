@@ -882,7 +882,7 @@ export function SettingsScreen() {
   );
 }
 
-function CollapseSection({
+export function CollapseSection({
   title,
   summary,
   testId,
@@ -1162,7 +1162,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
 
   const links: { view: RouteState["view"]; label: string; show: boolean; testId?: string }[] = [
     { view: "coverage", label: "Swap / time off", show: true, testId: "more-coverage" },
-    { view: "meds", label: "Medications", show: true },
+    { view: "meds", label: "Medications", show: true, testId: "more-meds" },
     { view: "activities", label: "Activities", show: true },
     { view: "guides", label: "Guides", show: true },
     { view: "medlog", label: "Med log", show: canReviewLogs(session.role) },

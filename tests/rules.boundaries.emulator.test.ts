@@ -132,8 +132,8 @@ describe("medication and shift shape", () => {
     await assertFails(setDoc(doc(dbFor("admin"), "medications/empty"), { ...base, times: [] }));
     await assertFails(setDoc(doc(dbFor("admin"), "medications/bad"), { ...base, times: ["8:00"] }));
     await assertSucceeds(setDoc(doc(dbFor("admin"), "medications/ok"), { ...base, times: ["08:00"] }));
-    await assertFails(deleteDoc(doc(dbFor("lead"), "medications/ok")));
-    await assertSucceeds(deleteDoc(doc(dbFor("admin"), "medications/ok")));
+    await assertFails(deleteDoc(doc(dbFor("pat"), "medications/ok")));
+    await assertSucceeds(deleteDoc(doc(dbFor("lead"), "medications/ok")));
   });
 
   it("rejects a shift for an inactive person and a shift a provider tries to delete", async () => {

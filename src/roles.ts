@@ -17,6 +17,11 @@ export function canManageMeds(role: Role): boolean {
   return role === "super_admin" || role === "admin";
 }
 
+/** Admins and team leads add and change medications. */
+export function canEditMedications(role: Role): boolean {
+  return role === "super_admin" || role === "admin" || role === "team_lead";
+}
+
 export function canManageGuides(role: Role): boolean {
   return role === "super_admin" || role === "admin" || role === "team_lead";
 }
