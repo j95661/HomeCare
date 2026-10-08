@@ -16,5 +16,6 @@ describe("shift periods", () => {
 
   it("skips a day off", () => {
     expect(periodsForShifts([{ start: "08:00", end: "16:00", kind: "day_off" }])).toEqual([]);
+    expect(periodsForShifts([{ start: "08:00", end: "16:00", kind: "sick_leave" }])).toEqual([]);
   });
 });

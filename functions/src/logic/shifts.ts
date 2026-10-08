@@ -1,3 +1,5 @@
+import type { CoverageKind } from "./schedule";
+
 export type ShiftRecord = {
   userId: string;
   userName: string;
@@ -7,7 +9,7 @@ export type ShiftRecord = {
 };
 
 export type ShiftRequestRecord = {
-  type: "swap" | "day_off";
+  type: CoverageKind;
   shiftId: string;
   requesterId: string;
   status: "pending" | "accepted" | "declined" | "cancelled";

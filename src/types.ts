@@ -1,3 +1,5 @@
+import type { CoverageKind } from "./schedule";
+
 export type Role = "super_admin" | "admin" | "team_lead" | "care_provider";
 
 export type ViewName =
@@ -5,6 +7,7 @@ export type ViewName =
   | "calendar"
   | "messages"
   | "more"
+  | "coverage"
   | "meds"
   | "medlog"
   | "activities"
@@ -80,7 +83,7 @@ export type Shift = {
 
 export type ShiftRequest = {
   id: string;
-  type: "swap" | "day_off";
+  type: CoverageKind;
   shiftId: string;
   templateId?: string;
   shiftDate: string;
@@ -142,6 +145,6 @@ export type ChatMessage = {
   text: string;
   imagePath?: string;
   kind?: string;
-  coverageType?: "swap" | "day_off";
+  coverageType?: CoverageKind;
   createdAt?: { toDate: () => Date };
 };

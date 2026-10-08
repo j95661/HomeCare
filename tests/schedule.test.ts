@@ -106,7 +106,7 @@ for (const { name, api } of apis) {
       expect(following).toMatchObject([{ userName: "Lead", source: "exception", kind: "day_off" }]);
       expect(previous).toMatchObject([{ userName: "Alex", source: "template", kind: "" }]);
       expect(api.dayExceptionLabel(swapped)).toBe("Swap");
-      expect(api.dayExceptionLabel(following)).toBe("Day off");
+      expect(api.dayExceptionLabel(following)).toBe("Time off");
       expect(api.dayExceptionLabel(previous)).toBe("");
     });
 
@@ -198,6 +198,15 @@ for (const { name, api } of apis) {
       expect(api.isDuringShift("10:00", swapped, "sam")).toBe(true);
       expect(api.isDuringShift("10:00", swapped, "alex")).toBe(false);
       expect(api.isDuringShift("10:00", off, "alex")).toBe(false);
+      const sick = api.resolveDay("2026-10-21", [template()], [
+        exception({ id: "sick", date: "2026-10-21", kind: "sick_leave", userId: "alex", userName: "Alex" }),
+      ]);
+      expect(sick).toMatchObject([{ userName: "Alex", source: "exception", kind: "sick_leave" }]);
+      expect(api.isDuringShift("10:00", sick, "alex")).toBe(false);
+      expect(api.exceptionLabel("sick_leave")).toBe("Sick leave");
+      expect(api.exceptionFromData("s1", { kind: "sick_leave" }).kind).toBe("sick_leave");
+      expect(api.coverageRequestLabel("day_off")).toBe("Time off");
+      expect(api.coverageRequestLabel("sick_leave")).toBe("Sick leave");
     });
 
     it("holds a manual shift until the schedule matches it", () => {

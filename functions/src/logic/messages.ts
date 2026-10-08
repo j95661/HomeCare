@@ -7,7 +7,7 @@ export function messagePreview(text: string, hasImage: boolean): string {
 
 export type CoverageNotice = {
   action: "requested" | "accepted" | "cancelled";
-  type: "swap" | "day_off";
+  type: "swap" | "day_off" | "sick_leave";
   date: string;
   start: string;
   end: string;
@@ -31,13 +31,26 @@ function formatClock(hhmm: string): string {
   return `${hour12}:${minute} ${suffix}`;
 }
 
-/** Care-team text for a shift swap or day off. */
+function coveragePhrase(notice: CoverageNotice): string {
+  if (notice.type === "day_off") {
+    if (notice.action === "accepted") return "Took the time off";
+    if (notice.action === "cancelled") return "Cancelled the time off";
+    return "Requested time off";
+  }
+  if (notice.type === "sick_leave") {
+    if (notice.action === "accepted") return "Took the sick leave";
+    if (notice.action === "cancelled") return "Cancelled the sick leave";
+    return "Requested sick leave";
+  }
+  if (notice.action === "accepted") return "Took the shift swap";
+  if (notice.action === "cancelled") return "Cancelled the shift swap";
+  return "Requested a shift swap";
+}
+
+/** Care-team text for a shift swap, time off, or sick leave. */
 export function coverageMessageText(notice: CoverageNotice): string {
   const when = `${formatDay(notice.date)}, ${formatClock(notice.start)}–${formatClock(notice.end)}`;
-  const what = notice.type === "day_off" ? "day off" : "shift swap";
-  if (notice.action === "accepted") return `Took the ${what} for ${when}.`;
-  if (notice.action === "cancelled") return `Cancelled the ${what} for ${when}.`;
-  return `Requested a ${what} for ${when}.`;
+  return `${coveragePhrase(notice)} for ${when}.`;
 }
 
 export function replaceParticipant(ids: string[], fromUid: string, toUid: string): string[] {

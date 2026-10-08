@@ -195,7 +195,13 @@ describe("reminders and push", () => {
     ).toBe("Took the shift swap for Wed, Oct 7, 8:00 AM–4:00 PM.");
     expect(
       coverageMessageText({ action: "cancelled", type: "day_off", date: "2026-10-09", start: "16:00", end: "22:00" }),
-    ).toBe("Cancelled the day off for Fri, Oct 9, 4:00 PM–10:00 PM.");
+    ).toBe("Cancelled the time off for Fri, Oct 9, 4:00 PM–10:00 PM.");
+    expect(
+      coverageMessageText({ action: "requested", type: "sick_leave", date: "2026-10-14", start: "08:00", end: "16:00" }),
+    ).toBe("Requested sick leave for Wed, Oct 14, 8:00 AM–4:00 PM.");
+    expect(
+      coverageMessageText({ action: "accepted", type: "day_off", date: "2026-10-14", start: "08:00", end: "16:00" }),
+    ).toBe("Took the time off for Wed, Oct 14, 8:00 AM–4:00 PM.");
   });
 
   it("builds an audible visible push, with the medication prompt kept on screen", () => {

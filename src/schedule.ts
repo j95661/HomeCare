@@ -11,11 +11,13 @@ export type ShiftTemplate = {
   effectiveUntil: string;
 };
 
+export type CoverageKind = "swap" | "day_off" | "sick_leave";
+
 export type ShiftException = {
   id: string;
   date: string;
   templateId: string;
-  kind: "swap" | "day_off";
+  kind: CoverageKind;
   userId: string;
   userName: string;
   start: string;
@@ -33,7 +35,7 @@ export type ResolvedShift = {
   start: string;
   end: string;
   source: "template" | "exception";
-  kind: "" | "swap" | "day_off";
+  kind: "" | CoverageKind;
 };
 
 export type PatternPromotion = {
@@ -120,13 +122,29 @@ export function visibleCoverageRequests<T extends { status: string }>(requests: 
   return requests.filter((item) => item.status !== "cancelled");
 }
 
-export function exceptionLabel(kind: "" | "swap" | "day_off"): string {
-  if (kind === "day_off") return "Day off";
+export function coverageKind(value: unknown): CoverageKind | "" {
+  return value === "swap" || value === "day_off" || value === "sick_leave" ? value : "";
+}
+
+/** Time off and sick leave are not working shifts. */
+export function isAwayKind(kind: string): boolean {
+  return kind === "day_off" || kind === "sick_leave";
+}
+
+export function exceptionLabel(kind: "" | CoverageKind): string {
+  if (kind === "day_off") return "Time off";
+  if (kind === "sick_leave") return "Sick leave";
   if (kind === "swap") return "Swap";
   return "Exception";
 }
 
-export function dayExceptionLabel(shifts: { source: string; kind: "" | "swap" | "day_off" }[]): string {
+export function coverageRequestLabel(type: string): string {
+  if (type === "day_off") return "Time off";
+  if (type === "sick_leave") return "Sick leave";
+  return "Shift swap";
+}
+
+export function dayExceptionLabel(shifts: { source: string; kind: "" | CoverageKind }[]): string {
   const kinds = [...new Set(shifts.filter((shift) => shift.source === "exception").map((shift) => shift.kind))];
   if (kinds.length === 0) return "";
   if (kinds.length > 1) return "Exception";
@@ -147,7 +165,8 @@ export function templateFromData(id: string, data: Record<string, unknown>): Shi
 }
 
 export function exceptionFromData(id: string, data: Record<string, unknown>): ShiftException {
-  const kind = data.kind === "day_off" ? "day_off" : "swap";
+  const parsed = coverageKind(data.kind);
+  const kind: CoverageKind = parsed === "" ? "swap" : parsed;
   return {
     id,
     date: String(data.date ?? ""),
@@ -276,11 +295,11 @@ export function promoteSwap(input: {
 /** True when this person is the one working and the clock is inside start inclusive, end exclusive. */
 export function isDuringShift(
   time: string,
-  shifts: { userId: string; start: string; end: string; kind: "" | "swap" | "day_off" }[],
+  shifts: { userId: string; start: string; end: string; kind: "" | CoverageKind }[],
   userId: string,
 ): boolean {
   return shifts.some(
-    (shift) => shift.userId === userId && shift.kind !== "day_off" && shift.start <= time && time < shift.end,
+    (shift) => shift.userId === userId && !isAwayKind(shift.kind) && shift.start <= time && time < shift.end,
   );
 }
 

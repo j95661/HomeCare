@@ -15,6 +15,7 @@ import { authError, call, errorText } from "./api";
 import { auth, db } from "./firebase";
 import { Field, Notice } from "./components";
 import { CalendarScreen } from "./screens/CalendarScreen";
+import { CoverageScreen } from "./screens/CoverageScreen";
 import { ActivitiesScreen, GuidesScreen, MedLogScreen, MoreScreen, PeopleScreen, SettingsScreen } from "./screens/ExtraScreens";
 import { HomeScreen } from "./screens/HomeScreen";
 import { MedsScreen } from "./screens/MedsScreen";
@@ -57,6 +58,7 @@ const VIEWS = new Set<ViewName>([
   "calendar",
   "messages",
   "more",
+  "coverage",
   "meds",
   "medlog",
   "activities",
@@ -535,6 +537,7 @@ export function App() {
             {route.view === "calendar" ? <CalendarScreen /> : null}
             {route.view === "messages" ? <MessagesScreen thread={route.thread} go={go} /> : null}
             {route.view === "more" ? <MoreScreen go={go} onSignOut={() => void signOut(auth)} /> : null}
+            {route.view === "coverage" ? <CoverageScreen /> : null}
             {route.view === "meds" ? <MedsScreen /> : null}
             {route.view === "activities" ? <ActivitiesScreen /> : null}
             {route.view === "guides" ? <GuidesScreen guideId={route.guide} go={go} /> : null}
