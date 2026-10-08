@@ -11,6 +11,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
+import { additionProblem, answerMatches, randomAddends } from "../deleteCheck";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { enablePush } from "../push";
@@ -349,6 +350,7 @@ export function PeopleScreen() {
   const [enableNow, setEnableNow] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -388,7 +390,8 @@ export function PeopleScreen() {
       setDisplayName("");
       setEmail("");
       setEnableNow(false);
-      if (result.emailError) setError(result.emailError);
+      if (result.emailError && result.enabled) setNotice(result.emailError);
+      else if (result.emailError) setError(result.emailError);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -432,8 +435,23 @@ export function PeopleScreen() {
   async function enable(uid: string) {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      await call("enableUserAccount", { uid });
+      const result = await call<{ enabled: boolean; emailNote?: string }>("enableUserAccount", { uid });
+      if (result.emailNote) setNotice(result.emailNote);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePerson(uid: string) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await call("deleteUserAccount", { uid });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -532,10 +550,12 @@ export function PeopleScreen() {
             onRevoke={() => void revoke(person.id)}
             onClearEmoji={() => void clearEmoji(person.id)}
             onEnable={() => void enable(person.id)}
+            onDelete={() => void removePerson(person.id)}
             onRemoveInvite={() => void removeInvite(person.email)}
           />
         ))}
       </ul>
+      {notice ? <Notice tone="info">{notice}</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );
@@ -550,6 +570,7 @@ function PersonRow({
   onRevoke,
   onClearEmoji,
   onEnable,
+  onDelete,
   onRemoveInvite,
 }: {
   person: Person;
@@ -560,17 +581,33 @@ function PersonRow({
   onRevoke: () => void;
   onClearEmoji: () => void;
   onEnable: () => void;
+  onDelete: () => void;
   onRemoveInvite: () => void;
 }) {
   const session = useSession();
   const [name, setName] = useState(person.displayName);
   const [role, setRole] = useState<Role>(person.role);
+  const [open, setOpen] = useState(false);
+  const [deleteCheck, setDeleteCheck] = useState<{ question: string; answer: string } | null>(null);
+  const [guess, setGuess] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const locked = person.protected || person.role === "super_admin";
   const manageAccounts = isSuperAdmin(session.role);
   const showClear = Boolean(person.emoji) && canClearUserEmoji(session.role, session.uid, person.id);
   return (
-    <li className="card" data-testid="person-row">
-      <strong>{withEmoji(person.displayName, person.emoji)}</strong>
+    <li className="card" data-testid="person-row" data-user={person.displayName} data-open={open ? "true" : "false"}>
+      <button
+        type="button"
+        className="collapse-toggle"
+        data-testid="person-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="collapse-title">{withEmoji(person.displayName, person.emoji)}</span>
+        <span className="collapse-summary" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {open ? (
+      <div className="collapse-body stack">
       <p className="meta">
         {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
@@ -618,6 +655,55 @@ function PersonRow({
             </button>
           )}
         </>
+      ) : null}
+      {manageAccounts && !locked && person.id !== session.uid ? (
+        deleteCheck ? (
+          <>
+            <Field label={deleteCheck.question}>
+              <input
+                data-testid="delete-answer"
+                inputMode="numeric"
+                value={guess}
+                onChange={(event) => setGuess(event.target.value)}
+              />
+            </Field>
+            {deleteError ? <p className="hint">{deleteError}</p> : null}
+            <button
+              type="button"
+              className="danger"
+              data-testid="delete-confirm"
+              disabled={busy}
+              onClick={() => {
+                if (!answerMatches(deleteCheck.answer, guess)) {
+                  setDeleteError("That answer is not right.");
+                  return;
+                }
+                onDelete();
+              }}
+            >
+              Delete employee
+            </button>
+            <button type="button" disabled={busy} onClick={() => setDeleteCheck(null)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            data-testid="delete-person"
+            disabled={busy}
+            onClick={() => {
+              const [left, right] = randomAddends();
+              setDeleteCheck(additionProblem(left, right));
+              setGuess("");
+              setDeleteError("");
+            }}
+          >
+            Delete
+          </button>
+        )
+      ) : null}
+      </div>
       ) : null}
     </li>
   );
