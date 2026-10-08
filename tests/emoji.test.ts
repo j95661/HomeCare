@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEmoji, PROFILE_EMOJI, withEmoji } from "../functions/src/logic/emoji";
+import { isSingleEmoji, normalizeEmoji, PROFILE_EMOJI, withEmoji } from "../functions/src/logic/emoji";
 import { insertText } from "../src/messageText";
-import { PROFILE_EMOJI as clientEmoji, withEmoji as clientWithEmoji } from "../src/profileEmoji";
+import { isSingleEmoji as clientIsSingleEmoji, PROFILE_EMOJI as clientEmoji, withEmoji as clientWithEmoji } from "../src/profileEmoji";
 
 describe("employee emoji", () => {
   it("offers the same care list on the server and the phone", () => {
@@ -16,14 +16,20 @@ describe("employee emoji", () => {
     expect(normalizeEmoji("   ")).toEqual({ ok: true, emoji: "" });
   });
 
-  it("rejects pasted text, unlisted emoji, and more than one mark", () => {
-    expect(normalizeEmoji("Alex")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("🌻")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("👍🏽")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("👩‍⚕️")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("🇺🇸")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("😊😊")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("hi 😊")).toEqual({ ok: false, reason: "Choose an emoji." });
+  it("accepts one emoji from the keyboard", () => {
+    for (const mark of ["🌻", "👍🏽", "👩‍⚕️", "🇺🇸", "❤️", "1️⃣"]) {
+      expect(isSingleEmoji(mark)).toBe(true);
+      expect(clientIsSingleEmoji(mark)).toBe(true);
+      expect(normalizeEmoji(`  ${mark}  `)).toEqual({ ok: true, emoji: mark });
+    }
+  });
+
+  it("rejects words, digits, and more than one emoji", () => {
+    for (const mark of ["Alex", "1", "#", "*", "😊😊", "hi 😊"]) {
+      expect(isSingleEmoji(mark)).toBe(false);
+      expect(clientIsSingleEmoji(mark)).toBe(false);
+      expect(normalizeEmoji(mark)).toEqual({ ok: false, reason: "Choose an emoji." });
+    }
   });
 
   it("inserts one emoji into a plain message", () => {
@@ -37,7 +43,7 @@ describe("employee emoji", () => {
     expect(withEmoji("Alex", "😊")).toBe("😊 Alex");
     expect(withEmoji("Alex", "")).toBe("A Alex");
     expect(withEmoji("Alex")).toBe("A Alex");
-    expect(withEmoji("Alex", "🌻")).toBe("A Alex");
+    expect(withEmoji("Alex", "🌻")).toBe("🌻 Alex");
     expect(withEmoji("  ", "nope")).toBe("?");
     expect(clientWithEmoji("Sam", "🦊")).toBe("🦊 Sam");
   });

@@ -14,7 +14,7 @@
   --focus: #6b1e78;
   --mine: #f8e4eb;
   --glow: #f6d0dc;
-  font-family: "Avenir Next", "Segoe UI", "Gill Sans", system-ui, sans-serif;
+  font-family: "Avenir Next", "Segoe UI", "Gill Sans", system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
   font-size: 18px;
   line-height: 1.35;
   color: var(--ink);
