@@ -26,6 +26,7 @@ import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } fro
 import { canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnabled, isRole, type Role } from "./logic/roles";
 import {
   careTeamRecipients,
+  coverageRecipients,
   directRecipients,
   messageRecipients,
   selectMedicationDispatches,
@@ -46,7 +47,7 @@ import {
 } from "./logic/schedule";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { zonedParts } from "./logic/time";
-import { messagePreview, replaceParticipant } from "./logic/messages";
+import { coverageMessageText, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
 
@@ -985,19 +986,7 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
     resolvedAt: null,
     history: [{ action: "requested", uid: caller.uid, name: caller.displayName, at }],
   });
-  const users = await loadActiveUsers();
-  const label = type === "day_off" ? "a day off" : "a shift swap";
-  await sendVisiblePush(
-    db,
-    messaging,
-    users.filter((user) => user.uid !== caller.uid).map((user) => user.uid),
-    {
-      title: "Coverage request",
-      body: `${withEmoji(caller.displayName, caller.emoji)} requested ${label} on ${date} ${resolved.start}–${resolved.end}.`,
-      link: "/?view=calendar",
-      data: { type: "swap", requestId: ref.id, title: "Coverage request", body: caller.displayName },
-    },
-  );
+  await announceCoverage(caller, { action: "requested", type, date, start: resolved.start, end: resolved.end });
   return { id: ref.id };
 });
 
@@ -1007,6 +996,8 @@ type LoadedRequest = ShiftRequestRecord & {
   acceptedBy: string;
   acceptedByName: string;
   patternUpdated: boolean;
+  shiftStart: string;
+  shiftEnd: string;
 };
 
 async function loadRequest(id: string): Promise<LoadedRequest> {
@@ -1023,6 +1014,8 @@ async function loadRequest(id: string): Promise<LoadedRequest> {
     acceptedBy: String(snap.get("acceptedBy") ?? ""),
     acceptedByName: String(snap.get("acceptedByName") ?? ""),
     patternUpdated: snap.get("patternUpdated") === true,
+    shiftStart: String(snap.get("shiftStart") ?? ""),
+    shiftEnd: String(snap.get("shiftEnd") ?? ""),
     history: (snap.get("history") as ShiftRequestRecord["history"]) || [],
   };
 }
@@ -1119,11 +1112,12 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
       history: next.request.history,
     });
   });
-  await sendVisiblePush(db, messaging, [current.requesterId], {
-    title: "Coverage accepted",
-    body: `${withEmoji(caller.displayName, caller.emoji)} took the shift on ${shift.date} ${shift.start}–${shift.end}.`,
-    link: "/?view=calendar",
-    data: { type: "swap", requestId: id, title: "Coverage accepted", body: caller.displayName },
+  await announceCoverage(caller, {
+    action: "accepted",
+    type: current.type,
+    date: shift.date,
+    start: shift.start,
+    end: shift.end,
   });
   return { accepted: true };
 });
@@ -1210,8 +1204,47 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
       { action: "cancelled", uid: caller.uid, name: caller.displayName, at: new Date().toISOString() },
     ],
   });
+  await announceCoverage(caller, {
+    action: "cancelled",
+    type: current.type,
+    date: current.shiftDate,
+    start: current.shiftStart,
+    end: current.shiftEnd,
+  });
   return { cancelled: true };
 });
+
+async function announceCoverage(
+  sender: { uid: string; displayName: string },
+  notice: CoverageNotice,
+): Promise<void> {
+  if (!notice.date || !notice.start || !notice.end) return;
+  const text = coverageMessageText(notice);
+  const parent = db.doc("groupThread/main");
+  const message = parent.collection("messages").doc();
+  const batch = db.batch();
+  batch.set(message, {
+    senderId: sender.uid,
+    senderName: sender.displayName,
+    text,
+    kind: "coverage",
+    coverageType: notice.type,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  batch.set(
+    parent,
+    {
+      type: "group",
+      title: "Care team",
+      lastMessageText: messagePreview(text, false),
+      lastMessageAt: FieldValue.serverTimestamp(),
+      lastSenderId: sender.uid,
+      lastSenderName: sender.displayName,
+    },
+    { merge: true },
+  );
+  await batch.commit();
+}
 
 async function notifyMessage(
   senderId: string,
@@ -1220,14 +1253,16 @@ async function notifyMessage(
   hasImage: boolean,
   threadId: string,
   directParticipantIds?: string[],
-  notice = false,
+  audience: "care" | "notice" | "coverage" = "care",
 ): Promise<void> {
   const users = await loadActiveUsers();
   const shown = messagePreview(text, hasImage);
   const preview = shown.length > 120 ? `${shown.slice(0, 117)}...` : shown;
+  const groupRecipients =
+    audience === "care" ? careTeamRecipients(users, senderId) : audience === "coverage" ? coverageRecipients(users, senderId) : messageRecipients(users, senderId);
   const recipients = directParticipantIds
     ? directRecipients(users, senderId, directParticipantIds)
-    : (notice ? messageRecipients(users, senderId) : careTeamRecipients(users, senderId)).map((user) => user.uid);
+    : groupRecipients.map((user) => user.uid);
   const sender = users.find((user) => user.uid === senderId);
   const title = withEmoji(senderName || "New message", sender?.emoji);
   await sendVisiblePush(db, messaging, recipients, {
@@ -1248,7 +1283,7 @@ export const onGroupMessage = onDocumentCreated("groupThread/{docId}/messages/{m
     typeof data.imagePath === "string" && data.imagePath.length > 0,
     "group",
     undefined,
-    data.notice === true,
+    data.kind === "coverage" ? "coverage" : data.notice === true ? "notice" : "care",
   );
 });
 

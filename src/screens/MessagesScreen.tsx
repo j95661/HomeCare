@@ -311,7 +311,12 @@ export function MessagesScreen({ thread, go }: Props) {
       {messages.length === 0 ? <Empty>No messages yet.</Empty> : null}
       <ul className="list">
         {messages.map((message) => (
-          <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"} data-testid="message-card">
+          <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"} data-testid="message-card" data-kind={message.kind || ""}>
+            {message.kind === "coverage" ? (
+              <span className="badge" data-testid="coverage-message">
+                {message.coverageType === "day_off" ? "Day off" : "Shift swap"}
+              </span>
+            ) : null}
             <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
             {message.text ? <p className="message-body">{message.text}</p> : null}
             {message.imagePath ? <CareImage path={message.imagePath} /> : null}

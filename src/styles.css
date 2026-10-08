@@ -179,7 +179,17 @@ textarea { min-height: 96px; }
   border-top: 2px solid var(--line);
 }
 
-.nav button { min-height: 48px; padding: 8px; }
+.nav button { position: relative; min-height: 48px; padding: 8px; }
+.nav-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--warn);
+  border: 2px solid var(--bg);
+}
 
 h1, h2, .brand {
   font-family: Palatino, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
