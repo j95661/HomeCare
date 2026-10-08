@@ -28,6 +28,7 @@ import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { useAccountBackground } from "./background";
 import { applyTheme, DEFAULT_COLOR_SCHEME, resolveColorScheme } from "./themes";
+import { swipeAxis, swipeStartsOnControl, tabInDirection } from "./tabSwipe";
 import { todayISO, zonedParts } from "./time";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
@@ -107,6 +108,10 @@ export function App() {
   const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
   const scheduledRef = useRef(false);
   const scheduleReadyRef = useRef(false);
+  const appRef = useRef<HTMLDivElement>(null);
+  const routeRef = useRef(route);
+  const goRef = useRef<(patch: Partial<RouteState>) => void>(() => {});
+  routeRef.current = route;
 
   const load = useCallback(async (user: User) => {
     try {
@@ -474,6 +479,74 @@ export function App() {
     }
   }, [gate, shiftBusy]);
 
+  useEffect(() => {
+    const root = appRef.current;
+    if (!root) return;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    let swiped = false;
+
+    function onStart(event: TouchEvent) {
+      swiped = false;
+      if (gate.kind !== "app" || event.touches.length !== 1) {
+        tracking = false;
+        return;
+      }
+      const touch = event.touches[0];
+      if (touch.clientX < 28 || touch.clientX > window.innerWidth - 28 || swipeStartsOnControl(event.target)) {
+        tracking = false;
+        return;
+      }
+      startX = touch.clientX;
+      startY = touch.clientY;
+      tracking = true;
+    }
+
+    function onEnd(event: TouchEvent) {
+      if (!tracking) return;
+      tracking = false;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const axis = swipeAxis(touch.clientX - startX, touch.clientY - startY);
+      if (!axis) return;
+      const current = routeRef.current;
+      if (current.view === "messages" && current.thread && axis === "right") {
+        event.preventDefault();
+        swiped = true;
+        goRef.current({ view: "messages", thread: null });
+        return;
+      }
+      const view = tabInDirection(current.view, axis);
+      if (!view) return;
+      event.preventDefault();
+      swiped = true;
+      goRef.current({ view, thread: null, guide: null, med: null, time: null });
+    }
+
+    function onClick(event: MouseEvent) {
+      if (!swiped) return;
+      swiped = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    function onCancel() {
+      tracking = false;
+    }
+
+    root.addEventListener("touchstart", onStart, { passive: true });
+    root.addEventListener("touchend", onEnd);
+    root.addEventListener("touchcancel", onCancel);
+    root.addEventListener("click", onClick, true);
+    return () => {
+      root.removeEventListener("touchstart", onStart);
+      root.removeEventListener("touchend", onEnd);
+      root.removeEventListener("touchcancel", onCancel);
+      root.removeEventListener("click", onClick, true);
+    };
+  }, [gate.kind]);
+
   function go(patch: Partial<RouteState>) {
     const next: RouteState = {
       view: patch.view ?? route.view,
@@ -485,9 +558,10 @@ export function App() {
     writeRoute(next);
     setRoute(next);
   }
+  goRef.current = go;
 
   return (
-    <div className="app">
+    <div className="app" ref={appRef}>
       <header className="top">
         <div className="brand-block">
           <strong className="brand">HammondCare</strong>
