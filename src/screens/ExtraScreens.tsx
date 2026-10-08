@@ -622,7 +622,11 @@ export function PeopleScreen() {
           />
         ))}
       </ul>
-      {notice ? <Notice tone="info">{notice}</Notice> : null}
+      {notice ? (
+        <div data-testid="people-notice">
+          <Notice tone="info">{notice}</Notice>
+        </div>
+      ) : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );

@@ -878,7 +878,7 @@ function LoginScreen({ notice }: { notice?: string }) {
       setDevCode(result.devCode || "");
     } catch (err) {
       const message = errorText(err);
-      if (message.includes("Ask an admin for a sign-in code")) {
+      if (message.includes("Ask an admin for a sign-in code") || message.includes("Wait a minute before requesting another code")) {
         setCodeSent(true);
         setAdminCode(true);
         setError("");
@@ -943,7 +943,7 @@ function LoginScreen({ notice }: { notice?: string }) {
           {codeSent ? (
             <>
               <p className="hint">
-                {adminCode ? "Enter the 6-digit code from your admin." : `A 6-digit code was sent to ${email.trim()}.`}
+                {adminCode ? "Enter the 6-digit code." : `A 6-digit code was sent to ${email.trim()}.`}
               </p>
               {devCode ? (
                 <p className="notice" data-testid="dev-otp">
