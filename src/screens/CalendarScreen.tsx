@@ -16,7 +16,7 @@ import { call, errorText, isPermissionDenied } from "../api";
 import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
-import { canManageSchedule, isAccountEnabled } from "../roles";
+import { canEditWeeklyPattern, isAccountEnabled } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import {
   WEEKDAY_NAMES,
@@ -62,7 +62,7 @@ export function CalendarScreen() {
   const [showForm, setShowForm] = useState(false);
   const [openPatternPeople, setOpenPatternPeople] = useState<ReadonlySet<string>>(() => new Set());
   const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
-  const manage = canManageSchedule(session.role);
+  const manage = canEditWeeklyPattern(session.role);
   const [board, setBoard] = useState<"mine" | "team">("mine");
   const today = todayISO(session.timezone);
 
@@ -576,7 +576,7 @@ export function CalendarScreen() {
                   ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
                   : ""}
               </p>
-              {item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
+              {manage && item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
               <ul className="history">
                 {(item.history ?? []).map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>

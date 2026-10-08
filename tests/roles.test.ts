@@ -28,6 +28,7 @@ import {
   canDeleteActivities,
   canManageGuides,
   canManageMeds,
+  canEditWeeklyPattern,
   canManageSchedule,
   canReviewLogs,
   isSuperAdmin,
@@ -77,6 +78,7 @@ describe("role capabilities", () => {
     expect(roles.filter(canManageMeds)).toEqual(["super_admin", "admin"]);
     expect(roles.filter(canManageGuides)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canManageSchedule)).toEqual(["super_admin", "admin", "team_lead"]);
+    expect(roles.filter(canEditWeeklyPattern)).toEqual(["super_admin", "admin"]);
     expect(roles.filter(canReviewLogs)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canDeleteActivities)).toEqual(["super_admin", "admin"]);
     expect(roles.filter((role) => canRevoke(role))).toEqual(["super_admin"]);
