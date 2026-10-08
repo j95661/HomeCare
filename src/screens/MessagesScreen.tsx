@@ -20,6 +20,7 @@ import { Empty, Notice } from "../components";
 import { db } from "../firebase";
 import { canDeleteMessage, canPostCareTeamNotice, canPostToCareTeam, isAccountEnabled } from "../roles";
 import { useSession } from "../session";
+import { VIEW_CHANGE } from "../viewAs";
 import { formatStamp } from "../time";
 import type { ChatMessage, Person, RouteState } from "../types";
 
@@ -125,6 +126,10 @@ export function MessagesScreen({ thread, go }: Props) {
       go({ view: "messages", thread: existing.id });
       return;
     }
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     const id = directThreadId(session.uid, other.id);
     try {
       const ref = doc(db, "threads", id);
@@ -173,6 +178,10 @@ export function MessagesScreen({ thread, go }: Props) {
   async function send() {
     const value = text.trim();
     if ((!value && !picture.file) || !thread || busy) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     setBusy(true);
     setError("");
     try {

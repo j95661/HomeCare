@@ -17,6 +17,7 @@ import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { canManageSchedule, isAccountEnabled } from "../roles";
+import { VIEW_CHANGE } from "../viewAs";
 import {
   WEEKDAY_NAMES,
   dayExceptionLabel,
@@ -126,6 +127,10 @@ export function CalendarScreen() {
   }
 
   async function savePattern() {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     const person = people.find((item) => item.id === form.userId);
     if (!person) {
       setError("Choose a person.");
@@ -158,6 +163,10 @@ export function CalendarScreen() {
   }
 
   async function changePerson(template: ShiftTemplate, userId: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     const person = people.find((item) => item.id === userId);
     if (!person || person.id === template.userId) return;
     try {
@@ -172,6 +181,10 @@ export function CalendarScreen() {
   }
 
   async function removePattern(id: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     try {
       await deleteDoc(doc(db, "shiftTemplates", id));
     } catch (err) {

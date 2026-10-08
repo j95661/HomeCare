@@ -46,6 +46,7 @@ export type Person = {
   awaitingGoogle?: boolean;
   protected: boolean;
   onShift: boolean;
+  colorScheme?: string;
 };
 
 export type Invite = {

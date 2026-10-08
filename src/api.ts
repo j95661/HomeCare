@@ -1,7 +1,20 @@
 import { httpsCallable } from "firebase/functions";
 import { functions } from "./firebase";
+import { viewOnlyError } from "./viewAs";
+
+const OWN_ACCOUNT_CALLS = new Set([
+  "getSessionState",
+  "acceptGoogleSignIn",
+  "requestEmailOtp",
+  "verifyEmailOtp",
+  "requestSignInCode",
+  "verifySignInCode",
+  "changePassword",
+]);
 
 export async function call<T>(name: string, data?: object): Promise<T> {
+  const blocked = viewOnlyError();
+  if (blocked && !OWN_ACCOUNT_CALLS.has(name)) throw new Error(blocked);
   const fn = httpsCallable(functions, name);
   const result = await fn(data ?? {});
   return result.data as T;
