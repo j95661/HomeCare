@@ -191,7 +191,33 @@ describe("notes, guides, and threads", () => {
       }),
     );
     await assertFails(setDoc(doc(dbFor("pat"), "handoverNotes/blank"), { ...note, body: "" }));
-    await assertFails(deleteDoc(doc(dbFor("lead"), "handoverNotes/n1")));
+    await assertFails(deleteDoc(doc(dbFor("pat"), "handoverNotes/n1")));
+    await assertSucceeds(deleteDoc(doc(dbFor("lead"), "handoverNotes/n1")));
+    await assertSucceeds(
+      setDoc(doc(dbFor("pat"), "handoverNotes/today"), {
+        ...note,
+        day: "2026-10-08",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(dbFor("pat"), "handoverNotes/bad-day"), {
+        ...note,
+        day: "tomorrow",
+      }),
+    );
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "handoverLog/n1"), {
+        body: "Quiet afternoon",
+        authorId: "pat",
+        authorName: "Pat",
+        day: "2026-10-07",
+        createdAt: Timestamp.now(),
+      });
+    });
+    await assertSucceeds(getDoc(doc(dbFor("admin"), "handoverLog/n1")));
+    await assertFails(getDoc(doc(dbFor("lead"), "handoverLog/n1")));
+    await assertFails(getDoc(doc(dbFor("pat"), "handoverLog/n1")));
+    await assertFails(deleteDoc(doc(dbFor("admin"), "handoverLog/n1")));
     await assertSucceeds(
       setDoc(doc(dbFor("pat"), "handoverNotes/pic"), {
         ...note,

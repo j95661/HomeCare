@@ -103,6 +103,7 @@ export type Handover = {
   body: string;
   authorId: string;
   authorName: string;
+  day?: string;
   imagePath?: string;
   createdAt?: { toDate: () => Date };
 };

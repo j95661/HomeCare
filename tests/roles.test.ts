@@ -8,6 +8,7 @@ import {
   canReviewAllLogs,
   canRevoke,
   canClearUserEmoji as serverCanClearUserEmoji,
+  canDeleteHandover as serverCanDeleteHandover,
   canDeleteMessage as serverCanDeleteMessage,
   isAccountEnabled as serverIsAccountEnabled,
   canPostCareTeamNotice as serverCanPostCareTeamNotice,
@@ -20,6 +21,7 @@ import {
 } from "../functions/src/logic/roles";
 import {
   canClearUserEmoji,
+  canDeleteHandover,
   canDeleteMessage,
   isAccountEnabled,
   canPostCareTeamNotice,
@@ -58,6 +60,7 @@ describe("role capabilities", () => {
       expect(isCareStaff(role)).toBe(serverIsCareStaff(role));
       expect(canPostToCareTeam(role)).toBe(serverCanPostToCareTeam(role));
       expect(canPostCareTeamNotice(role)).toBe(serverCanPostCareTeamNotice(role));
+      expect(canDeleteHandover(role)).toBe(serverCanDeleteHandover(role));
       expect(canDeleteMessage(role, "a", "a")).toBe(serverCanDeleteMessage(role, "a", "a"));
       expect(canDeleteMessage(role, "a", "b")).toBe(serverCanDeleteMessage(role, "a", "b"));
     }
@@ -98,6 +101,7 @@ describe("role capabilities", () => {
     expect(roles.filter(isCareStaff)).toEqual(["team_lead", "care_provider"]);
     expect(roles.filter(canPostToCareTeam)).toEqual(roles);
     expect(roles.filter(canPostCareTeamNotice)).toEqual(["super_admin", "admin", "team_lead"]);
+    expect(roles.filter(canDeleteHandover)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(canDeleteMessage("care_provider", "pat", "pat")).toBe(true);
     expect(canDeleteMessage("team_lead", "lead", "pat")).toBe(false);
     expect(canDeleteMessage("admin", "admin", "pat")).toBe(true);

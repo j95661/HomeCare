@@ -47,6 +47,7 @@ import {
   templateFromData,
 } from "./logic/schedule";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
+import { handoverNoteDay, shouldArchiveHandover } from "./logic/handover";
 import { zonedParts } from "./logic/time";
 import { coverageMessageText, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
 
@@ -1000,6 +1001,50 @@ async function dispatchDueReminders(now = new Date()): Promise<number> {
   );
   return dispatches.length;
 }
+
+export async function archivePreviousHandoverNotes(now = new Date()): Promise<number> {
+  const settings = await readSettings();
+  const today = zonedParts(now, settings.timezone).date;
+  const snap = await db.collection("handoverNotes").get();
+  const due = snap.docs.filter((item) => {
+    const created = item.get("createdAt");
+    return shouldArchiveHandover(
+      {
+        day: typeof item.get("day") === "string" ? item.get("day") : "",
+        createdAt: created && typeof created.toDate === "function" ? created.toDate() : null,
+      },
+      today,
+      settings.timezone,
+    );
+  });
+  for (const item of due) {
+    const created = item.get("createdAt");
+    const imagePath = item.get("imagePath");
+    const day = handoverNoteDay(
+      {
+        day: typeof item.get("day") === "string" ? item.get("day") : "",
+        createdAt: created && typeof created.toDate === "function" ? created.toDate() : null,
+      },
+      settings.timezone,
+    );
+    await db.doc(`handoverLog/${item.id}`).set({
+      body: String(item.get("body") || ""),
+      authorId: String(item.get("authorId") || ""),
+      authorName: String(item.get("authorName") || ""),
+      imagePath: typeof imagePath === "string" ? imagePath : "",
+      createdAt: created || FieldValue.serverTimestamp(),
+      day,
+      archivedAt: FieldValue.serverTimestamp(),
+    });
+    await item.ref.delete();
+  }
+  return due.length;
+}
+
+export const archiveHandoverNotes = onSchedule({ schedule: "every 60 minutes", timeZone: "Etc/UTC" }, async () => {
+  const count = await archivePreviousHandoverNotes(new Date());
+  logger.info(`Archived ${count} handover notes from earlier days`);
+});
 
 export const dispatchMedicationReminders = onSchedule(
   { schedule: "every 1 minutes", timeZone: "Etc/UTC" },

@@ -268,18 +268,25 @@ service cloud.firestore {
     }
 
     function validHandover(data) {
-      let textOnly = data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt'])
-        && data.body.size() > 0;
-      let withImage = data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'imagePath'])
-        && ownedImage(data.imagePath, 'handover/');
-      return data.body is string
+      let keys = data.keys();
+      let allowed = keys.hasOnly(['body', 'authorId', 'authorName', 'createdAt'])
+        || keys.hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'day'])
+        || keys.hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'imagePath'])
+        || keys.hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'imagePath', 'day']);
+      let dayOk = !keys.hasAny(['day']) || isDate(data.day);
+      let imageOk = !keys.hasAny(['imagePath']) || ownedImage(data.imagePath, 'handover/');
+      let textOk = keys.hasAny(['imagePath']) || data.body.size() > 0;
+      return allowed
+        && data.body is string
         && data.body.size() <= 4000
+        && textOk
+        && dayOk
+        && imageOk
         && data.authorId == request.auth.uid
         && data.authorName is string
         && data.authorName.size() > 0
         && data.authorName.size() <= 80
-        && data.createdAt == request.time
-        && (textOnly || withImage);
+        && data.createdAt == request.time;
     }
 
     function validChatMessage(data, imageFolder) {
@@ -344,7 +351,13 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && validHandover(request.resource.data);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isTeamLeadOrAbove();
+    }
+
+    // Kept after the day ends so a later admin and parent review can read it.
+    match /handoverLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /activities/{id} {
