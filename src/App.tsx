@@ -24,7 +24,7 @@ import { nameMark } from "./emoji";
 import { groupSeenKey, nextMessageAlert } from "./messagesAlert";
 import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
-import { applyTheme, resolveColorScheme } from "./themes";
+import { applyTheme, DEFAULT_COLOR_SCHEME, resolveColorScheme } from "./themes";
 import { todayISO, zonedParts } from "./time";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
@@ -239,7 +239,7 @@ export function App() {
 
   useEffect(() => {
     if (gate.kind !== "app") {
-      applyTheme("rose");
+      applyTheme(DEFAULT_COLOR_SCHEME);
       return;
     }
     return onSnapshot(doc(db, "settings/app"), (snap) => {

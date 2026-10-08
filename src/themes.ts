@@ -1,4 +1,5 @@
 export const COLOR_SCHEMES = [
+  { id: "sky", label: "Sky", accent: "#0277bd" },
   { id: "rose", label: "Rose", accent: "#7a2948" },
   { id: "blush", label: "Blush", accent: "#8e3454" },
   { id: "lilac", label: "Lilac", accent: "#64357f" },
@@ -8,7 +9,7 @@ export const COLOR_SCHEMES = [
 
 export type ColorSchemeId = (typeof COLOR_SCHEMES)[number]["id"];
 
-export const DEFAULT_COLOR_SCHEME: ColorSchemeId = "rose";
+export const DEFAULT_COLOR_SCHEME: ColorSchemeId = "sky";
 
 /** Chart swatches a person can apply to their own screen. */
 export const COLOR_CHART = [
@@ -30,6 +31,8 @@ export const COLOR_CHART = [
   "#2f6f6a",
   "#6b8f71",
   "#3d5a80",
+  "#0277bd",
+  "#fbdf22",
   "#8c4a3a",
   "#f4c2d0",
 ] as const;
@@ -204,6 +207,6 @@ export function applyTheme(value: string): void {
   for (const key of THEME_VARS) root.style.removeProperty(key);
   const id = resolveColorScheme(value);
   root.dataset.theme = id;
-  const accent = COLOR_SCHEMES.find((scheme) => scheme.id === id)?.accent ?? "#7a2948";
+  const accent = COLOR_SCHEMES.find((scheme) => scheme.id === id)?.accent ?? COLOR_SCHEMES[0].accent;
   meta?.setAttribute("content", accent);
 }
