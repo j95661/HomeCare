@@ -234,6 +234,7 @@ describe("notes, guides, and threads", () => {
       lastSenderId: "",
       lastSenderName: "",
     };
+    await assertSucceeds(getDoc(doc(dbFor("pat"), "threads/direct_pat_sam")));
     await assertFails(setDoc(doc(dbFor("pat"), "threads/direct_sam_pat"), thread));
     await assertSucceeds(setDoc(doc(dbFor("pat"), "threads/direct_pat_sam"), { ...thread, participantIds: ["pat", "sam"] }));
     await assertFails(

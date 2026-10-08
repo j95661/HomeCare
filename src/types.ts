@@ -54,6 +54,7 @@ export type Invite = {
   displayName: string;
   role: Role;
   signIn: "google";
+  rosterUid?: string;
 };
 
 export type Medication = {

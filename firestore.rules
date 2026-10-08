@@ -322,7 +322,11 @@ service cloud.firestore {
     }
 
     match /threads/{threadId} {
-      allow read: if isActiveUser()
+      allow get: if isActiveUser() && (
+        !exists(/databases/$(database)/documents/threads/$(threadId))
+        || (resource.data.type == 'direct' && (isAdmin() || request.auth.uid in resource.data.participantIds))
+      );
+      allow list: if isActiveUser()
         && resource.data.type == 'direct'
         && (isAdmin() || request.auth.uid in resource.data.participantIds);
       allow create: if isActiveUser()

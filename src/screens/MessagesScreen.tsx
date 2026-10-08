@@ -242,8 +242,10 @@ export function MessagesScreen({ thread, go }: Props) {
     );
   }
 
-  const title = thread === "group" ? "Care team" : labelFor(directs.find((item) => item.id === thread)?.participantIds ?? thread.split("_").slice(1));
-  const showComposer = thread !== "group" || careStaff;
+  const directIds = directs.find((item) => item.id === thread)?.participantIds;
+  const title = thread === "group" ? "Care team" : labelFor(directIds ?? thread.split("_").slice(1));
+  const inDirect = thread !== "group" && (!directIds || directIds.includes(session.uid));
+  const showComposer = thread === "group" ? careStaff : inDirect;
 
   return (
     <div className="stack">

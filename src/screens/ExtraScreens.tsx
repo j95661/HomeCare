@@ -479,9 +479,9 @@ export function PeopleScreen() {
         </button>
       </section>
       ) : null}
-      {manageAccounts && invites.length > 0 ? (
+      {manageAccounts && invites.some((invite) => !invite.rosterUid) ? (
         <ul className="list">
-          {invites.map((invite) => (
+          {invites.filter((invite) => !invite.rosterUid).map((invite) => (
             <li key={invite.id} className="card" data-testid="pending-invite">
               <strong>{invite.displayName}</strong>
               <p className="meta">
@@ -506,6 +506,7 @@ export function PeopleScreen() {
             onRevoke={() => void revoke(person.id)}
             onClearEmoji={() => void clearEmoji(person.id)}
             onEnable={() => void enable(person.id)}
+            onRemoveInvite={() => void removeInvite(person.email)}
           />
         ))}
       </ul>
@@ -523,6 +524,7 @@ function PersonRow({
   onRevoke,
   onClearEmoji,
   onEnable,
+  onRemoveInvite,
 }: {
   person: Person;
   confirm: boolean;
@@ -532,6 +534,7 @@ function PersonRow({
   onRevoke: () => void;
   onClearEmoji: () => void;
   onEnable: () => void;
+  onRemoveInvite: () => void;
 }) {
   const session = useSession();
   const [name, setName] = useState(person.displayName);
@@ -540,7 +543,7 @@ function PersonRow({
   const manageAccounts = isSuperAdmin(session.role);
   const showClear = Boolean(person.emoji) && canClearUserEmoji(session.role, session.uid, person.id);
   return (
-    <li className="card">
+    <li className="card" data-testid="person-row">
       <strong>{withEmoji(person.displayName, person.emoji)}</strong>
       <p className="meta">
         {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
@@ -552,6 +555,11 @@ function PersonRow({
       {manageAccounts && person.active && !isAccountEnabled(person) ? (
         <button type="button" className="primary" data-testid="enable-person" disabled={busy} onClick={onEnable}>
           Enable
+        </button>
+      ) : null}
+      {manageAccounts && person.awaitingGoogle ? (
+        <button type="button" data-testid="remove-invite" disabled={busy} onClick={onRemoveInvite}>
+          Remove invite
         </button>
       ) : null}
       {showClear ? (
