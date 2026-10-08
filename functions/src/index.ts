@@ -15,9 +15,9 @@ import {
   requireAuth,
   requireReadyUser,
 } from "./lib";
-import { sendOtpEmail, sendWelcomeEmail } from "./email";
+import { gmailEnabledWithoutEmail, sendOtpEmail, sendWelcomeEmail } from "./email";
 import { sendVisiblePush, unsubscribeTokens } from "./notify";
-import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount } from "./logic/accounts";
+import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
@@ -294,15 +294,15 @@ export const createUserAccount = onCall(callable, async (request) => {
   await auth.setCustomUserClaims(created.uid, { role, active: true, otpVerified: false });
   if (!enableNow) return { uid: created.uid, enabled: false };
   try {
-    await enableRosterAccount(created.uid, caller.uid);
-    return { uid: created.uid, enabled: true };
+    const enabled = await enableRosterAccount(created.uid, caller.uid);
+    return { uid: created.uid, enabled: true, emailError: enabled.emailNote || undefined };
   } catch (error) {
     const message = error instanceof HttpsError ? error.message : "The welcome email could not be sent.";
     return { uid: created.uid, enabled: false, emailError: message };
   }
 });
 
-async function enableRosterAccount(uid: string, by: string): Promise<void> {
+async function enableRosterAccount(uid: string, by: string): Promise<{ emailNote: string }> {
   const snap = await db.doc(`users/${uid}`).get();
   if (!snap.exists) throw new HttpsError("not-found", "That person was not found.");
   if (snap.get("active") !== true) throw new HttpsError("failed-precondition", "This account has been revoked.");
@@ -317,7 +317,8 @@ async function enableRosterAccount(uid: string, by: string): Promise<void> {
   const role = snap.get("role");
   const signIn = snap.get("signIn") === "google" ? "google" : "email_otp";
   if (!isRole(role) || role === "super_admin") throw new HttpsError("failed-precondition", "That account has no role.");
-  await sendWelcomeEmail(email, displayName, signIn);
+  const welcome = await sendWelcomeEmail(email, displayName, signIn);
+  const emailNote = welcome === "skipped" ? gmailEnabledWithoutEmail() : "";
   if (signIn === "google") {
     try {
       await auth.deleteUser(uid);
@@ -335,7 +336,7 @@ async function enableRosterAccount(uid: string, by: string): Promise<void> {
       createdBy: by,
       createdAt: FieldValue.serverTimestamp(),
     });
-    return;
+    return { emailNote };
   }
   try {
     await auth.updateUser(uid, { disabled: false, displayName });
@@ -347,6 +348,7 @@ async function enableRosterAccount(uid: string, by: string): Promise<void> {
     throw error;
   }
   await db.doc(`users/${uid}`).update({ enabled: true, awaitingGoogle: false });
+  return { emailNote };
 }
 
 export const enableUserAccount = onCall(callable, async (request) => {
@@ -356,8 +358,8 @@ export const enableUserAccount = onCall(callable, async (request) => {
   }
   const uid = String(asObject(request.data).uid ?? "");
   if (!uid) throw new HttpsError("invalid-argument", "Choose a person.");
-  await enableRosterAccount(uid, caller.uid);
-  return { enabled: true };
+  const enabled = await enableRosterAccount(uid, caller.uid);
+  return { enabled: true, emailNote: enabled.emailNote };
 });
 
 export const removeInvite = onCall(callable, async (request) => {
@@ -637,6 +639,56 @@ export const revokeUserAccount = onCall(callable, async (request) => {
     authz(error);
   }
   return { revoked: true };
+});
+
+async function deleteMatching(collectionName: string, field: string, value: string): Promise<void> {
+  const snap = await db.collection(collectionName).where(field, "==", value).get();
+  await Promise.all(snap.docs.map((item) => item.ref.delete()));
+}
+
+export const deleteUserAccount = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  const uid = String(asObject(request.data).uid ?? "");
+  if (!uid) throw new HttpsError("invalid-argument", "Choose a person.");
+  const target = await readProfile(uid);
+  try {
+    await deleteAccount(
+      {
+        removeProfile: async (targetUid) => {
+          await db.doc(`users/${targetUid}`).delete();
+        },
+        removeAuth: async (targetUid) => {
+          try {
+            await auth.deleteUser(targetUid);
+          } catch (error) {
+            const code = (error as { code?: string }).code;
+            if (code !== "auth/user-not-found") throw error;
+          }
+        },
+        removeInvite: async (email, targetUid) => {
+          const address = email.trim().toLowerCase();
+          if (address) await db.doc(`invites/${address}`).delete();
+          await deleteMatching("invites", "rosterUid", targetUid);
+        },
+        removeSchedule: async (targetUid) => {
+          await deleteMatching("shiftTemplates", "userId", targetUid);
+          await deleteMatching("shiftExceptions", "userId", targetUid);
+          await deleteMatching("shiftRequests", "requesterId", targetUid);
+        },
+        removeDevices: async (targetUid) => {
+          const devices = await db.collection(`users/${targetUid}/devices`).get();
+          const tokens = devices.docs.map((item) => String(item.get("token") || "")).filter(Boolean);
+          await unsubscribeTokens(messaging, tokens, targetUid);
+          await Promise.all(devices.docs.map((item) => item.ref.delete()));
+        },
+      },
+      caller,
+      target,
+    );
+  } catch (error) {
+    authz(error);
+  }
+  return { deleted: true };
 });
 
 export const updateAppSettings = onCall(callable, async (request) => {

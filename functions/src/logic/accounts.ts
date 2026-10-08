@@ -27,6 +27,27 @@ export type RevokeDeps = {
   deleteTokens: (uid: string) => Promise<void>;
 };
 
+export type DeleteDeps = {
+  removeProfile: (uid: string) => Promise<void>;
+  removeAuth: (uid: string) => Promise<void>;
+  removeInvite: (email: string, uid: string) => Promise<void>;
+  removeSchedule: (uid: string) => Promise<void>;
+  removeDevices: (uid: string) => Promise<void>;
+};
+
+export async function deleteAccount(deps: DeleteDeps, caller: AccountProfile, target: AccountProfile): Promise<void> {
+  if (!caller.active || !caller.otpVerified) throw new AuthzError("Account is not active.");
+  if (!canRevoke(caller.role)) throw new AuthzError("Only the super admin can delete a person.");
+  if (isProtectedAccount(target)) throw new AuthzError("The super admin cannot be deleted.");
+  if (caller.uid === target.uid) throw new AuthzError("You cannot delete your own account.");
+
+  await deps.removeProfile(target.uid);
+  await deps.removeAuth(target.uid);
+  await deps.removeInvite(target.email, target.uid);
+  await deps.removeSchedule(target.uid);
+  await deps.removeDevices(target.uid);
+}
+
 export async function revokeAccount(
   deps: RevokeDeps,
   caller: AccountProfile,

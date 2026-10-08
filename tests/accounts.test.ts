@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount, type AccountProfile } from "../functions/src/logic/accounts";
+import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, revokeAccount, type AccountProfile } from "../functions/src/logic/accounts";
 
 function profile(partial: Partial<AccountProfile> & Pick<AccountProfile, "uid" | "role">): AccountProfile {
   return {
@@ -76,6 +76,49 @@ describe("revokeAccount", () => {
   it("refuses a super admin revoking their own unprotected-looking duplicate uid", async () => {
     const self = profile({ uid: "super", role: "care_provider", protected: false });
     await expect(revokeAccount(deps([]), caller, self)).rejects.toThrow(/cannot revoke your own account/);
+  });
+});
+
+describe("deleteAccount", () => {
+  const caller = profile({ uid: "super", role: "super_admin" });
+  const target = profile({ uid: "pat", role: "care_provider", protected: false });
+
+  function deps(order: string[]) {
+    return {
+      removeProfile: async () => {
+        order.push("profile");
+      },
+      removeAuth: async () => {
+        order.push("auth");
+      },
+      removeInvite: async () => {
+        order.push("invite");
+      },
+      removeSchedule: async () => {
+        order.push("schedule");
+      },
+      removeDevices: async () => {
+        order.push("devices");
+      },
+    };
+  }
+
+  it("removes the person, their sign-in, invite, and schedule", async () => {
+    const order: string[] = [];
+    await deleteAccount(deps(order), caller, target);
+    expect(order).toEqual(["profile", "auth", "invite", "schedule", "devices"]);
+  });
+
+  it("refuses anyone except the super admin, and never the protected account", async () => {
+    const order: string[] = [];
+    await expect(deleteAccount(deps(order), profile({ uid: "admin", role: "admin", protected: false }), target)).rejects.toThrow(
+      /Only the super admin/,
+    );
+    await expect(deleteAccount(deps(order), caller, profile({ uid: "root", role: "super_admin" }))).rejects.toThrow(/cannot be deleted/);
+    await expect(deleteAccount(deps(order), caller, profile({ uid: "super", role: "care_provider", protected: false }))).rejects.toThrow(
+      /cannot delete your own/,
+    );
+    expect(order).toEqual([]);
   });
 });
 
