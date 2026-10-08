@@ -197,6 +197,9 @@ describe("notes, guides, and threads", () => {
     await assertFails(addDoc(collection(dbFor("pat"), "groupThread/other/messages"), message));
     await assertFails(addDoc(collection(dbFor("pat"), "groupThread/main/messages"), { ...message, text: "   " }));
     const created = await assertSucceeds(addDoc(collection(dbFor("pat"), "groupThread/main/messages"), message));
+    await assertSucceeds(
+      addDoc(collection(dbFor("pat"), "groupThread/main/messages"), { ...message, text: "Quiet morning 🌸" }),
+    );
     await assertFails(updateDoc(created, { text: "Edited" }));
     await assertFails(deleteDoc(created));
   });
