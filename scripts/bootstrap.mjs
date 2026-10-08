@@ -204,6 +204,7 @@ if (process.env.SEED_DEMO === "1") {
       { title: "Check the water", detail: "Warm, not hot. Stay nearby." },
       { title: "Dry and dress", detail: "Help with each step. Talk through what is next." },
     ],
+    period: "evening",
     updatedBy: parent,
     updatedAt: FieldValue.serverTimestamp(),
   });

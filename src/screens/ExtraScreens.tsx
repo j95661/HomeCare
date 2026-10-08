@@ -19,7 +19,8 @@ import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds,
 import { nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
 import { applyTheme, COLOR_CHART, COLOR_SCHEMES, parseCustomColor, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
-import { formatStamp } from "../time";
+import { isShiftPeriod, PERIOD_HOURS, SHIFT_PERIODS, type ShiftPeriod } from "../shiftPeriod";
+import { formatClock, formatStamp } from "../time";
 import type { Activity, Guide, GuideStep, Invite, MedLog, Person, Role, RouteState } from "../types";
 
 export function ActivitiesScreen() {
@@ -121,6 +122,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
   const [guides, setGuides] = useState<Guide[]>([]);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [period, setPeriod] = useState<ShiftPeriod>("morning");
   const [steps, setSteps] = useState<GuideStep[]>([{ title: "", detail: "" }]);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -134,6 +136,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
             id: item.id,
             title: String(item.get("title") || ""),
             summary: String(item.get("summary") || ""),
+            period: isShiftPeriod(String(item.get("period") || "")) ? (String(item.get("period")) as ShiftPeriod) : "",
             steps: (item.get("steps") as GuideStep[]) || [],
           })),
         ),
@@ -155,6 +158,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
     const payload = {
       title: title.trim(),
       summary: summary.trim(),
+      period,
       steps: cleanSteps.map((step) => ({ title: step.title.trim(), detail: step.detail.trim() })),
       updatedBy: session.uid,
       updatedAt: serverTimestamp(),
@@ -165,6 +169,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
       else await addDoc(collection(db, "guides"), payload);
       setTitle("");
       setSummary("");
+      setPeriod("morning");
       setSteps([{ title: "", detail: "" }]);
       setEditing(null);
     } catch (err) {
@@ -179,6 +184,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
           All guides
         </button>
         <h2>{current.title}</h2>
+        {current.period ? <p className="meta">{PERIOD_HOURS[current.period].label}</p> : null}
         {current.summary ? <p>{current.summary}</p> : null}
         <ol className="steps">
           {current.steps.map((step, index) => (
@@ -203,6 +209,22 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
           <Field label="Summary">
             <input value={summary} onChange={(event) => setSummary(event.target.value)} />
           </Field>
+          <fieldset className="schemes" data-testid="guide-periods">
+            <legend>When it should be done</legend>
+            <p className="hint">It shows under To-do for anyone whose shift covers that part of the day.</p>
+            {SHIFT_PERIODS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                data-testid={`guide-period-${item}`}
+                className={period === item ? "primary" : ""}
+                aria-pressed={period === item}
+                onClick={() => setPeriod(item)}
+              >
+                {PERIOD_HOURS[item].label} · {formatClock(PERIOD_HOURS[item].start)} – {formatClock(PERIOD_HOURS[item].end)}
+              </button>
+            ))}
+          </fieldset>
           {steps.map((step, index) => (
             <div key={index} className="card">
               <Field label={`Step ${index + 1}`}>
@@ -223,7 +245,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
           <button type="button" onClick={() => setSteps([...steps, { title: "", detail: "" }])}>
             Add step
           </button>
-          <button type="button" className="primary" onClick={() => void save()}>
+          <button type="button" className="primary" data-testid="guide-save" onClick={() => void save()}>
             {editing ? "Save guide" : "Add guide"}
           </button>
         </section>
@@ -235,6 +257,7 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
             <button type="button" onClick={() => go({ view: "guides", guide: guide.id })}>
               {guide.title}
             </button>
+            {guide.period ? <p className="meta">{PERIOD_HOURS[guide.period].label}</p> : null}
             {guide.summary ? <p>{guide.summary}</p> : null}
             {manage ? (
               <div className="split">
@@ -244,14 +267,17 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
                     setEditing(guide.id);
                     setTitle(guide.title);
                     setSummary(guide.summary);
+                    setPeriod(guide.period || "morning");
                     setSteps(guide.steps.length ? guide.steps : [{ title: "", detail: "" }]);
                   }}
                 >
                   Edit
                 </button>
-                <button type="button" onClick={() => void deleteDoc(doc(db, "guides", guide.id)).catch((err) => setError(errorText(err)))}>
-                  Remove
-                </button>
+                {canManageMeds(session.role) ? (
+                  <button type="button" onClick={() => void deleteDoc(doc(db, "guides", guide.id)).catch((err) => setError(errorText(err)))}>
+                    Remove
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </li>

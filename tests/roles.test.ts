@@ -67,9 +67,9 @@ describe("role capabilities", () => {
     expect(canClearUserEmoji("admin", "admin", "")).toBe(false);
   });
 
-  it("gives medication and guide edits to admins, schedule edits to team leads, and settings to the super admin", () => {
+  it("gives medication edits to admins, guide and schedule edits to team leads, and settings to the super admin", () => {
     expect(roles.filter(canManageMeds)).toEqual(["super_admin", "admin"]);
-    expect(roles.filter(canManageGuides)).toEqual(["super_admin", "admin"]);
+    expect(roles.filter(canManageGuides)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canManageSchedule)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canReviewLogs)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canDeleteActivities)).toEqual(["super_admin", "admin"]);

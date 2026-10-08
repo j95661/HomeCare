@@ -16,8 +16,9 @@ import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { db } from "../firebase";
 import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
+import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
-import type { Handover, Medication, MedLog, RouteState } from "../types";
+import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
 
 type Props = {
   route: RouteState;
@@ -31,6 +32,7 @@ export function HomeScreen({ route, go }: Props) {
   const [meds, setMeds] = useState<Medication[]>([]);
   const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
   const [exceptions, setExceptions] = useState<ShiftException[]>([]);
+  const [guides, setGuides] = useState<Guide[]>([]);
   const [logs, setLogs] = useState<MedLog[]>([]);
   const [body, setBody] = useState("");
   const [noteText, setNoteText] = useState("");
@@ -65,6 +67,20 @@ export function HomeScreen({ route, go }: Props) {
       onSnapshot(
         query(collection(db, "shiftExceptions"), where("date", "==", day)),
         (snap) => setExceptions(snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>))),
+        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+      ),
+      onSnapshot(
+        collection(db, "guides"),
+        (snap) =>
+          setGuides(
+            snap.docs.map((item) => ({
+              id: item.id,
+              title: String(item.get("title") || ""),
+              summary: String(item.get("summary") || ""),
+              period: isShiftPeriod(String(item.get("period") || "")) ? (String(item.get("period")) as ShiftPeriod) : "",
+              steps: (item.get("steps") as GuideStep[]) || [],
+            })),
+          ),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
@@ -141,6 +157,11 @@ export function HomeScreen({ route, go }: Props) {
 
   const promptMed = meds.find((med) => med.id === prompt?.id);
   const shifts = resolveDay(day, templates, exceptions);
+  const myShifts = shifts.filter((shift) => shift.userId === session.uid && shift.kind !== "day_off");
+  const todoPeriods = periodsForShifts(myShifts);
+  const todos = guides
+    .filter((guide): guide is Guide & { period: ShiftPeriod } => guide.period !== "" && todoPeriods.includes(guide.period))
+    .sort((a, b) => todoPeriods.indexOf(a.period) - todoPeriods.indexOf(b.period) || a.title.localeCompare(b.title));
 
   return (
     <div className="stack">
@@ -167,6 +188,23 @@ export function HomeScreen({ route, go }: Props) {
               <p className="meta">
                 {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
               </p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="panel" data-testid="todo">
+        <h2>To-do</h2>
+        {myShifts.length === 0 ? <Empty>No shift today.</Empty> : null}
+        {myShifts.length > 0 && todos.length === 0 ? <Empty>Nothing to do for this shift.</Empty> : null}
+        <ul className="list">
+          {todos.map((guide) => (
+            <li key={guide.id} className="card" data-testid="todo-guide" data-period={guide.period}>
+              <button type="button" onClick={() => go({ view: "guides", guide: guide.id })}>
+                {guide.title}
+              </button>
+              <p className="meta">{guide.period ? PERIOD_HOURS[guide.period].label : ""}</p>
+              {guide.summary ? <p>{guide.summary}</p> : null}
             </li>
           ))}
         </ul>

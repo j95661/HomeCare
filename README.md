@@ -12,7 +12,8 @@ Private family care app for a small team. Each person has their own sign-in. New
 | | Super admin | Admin | Team lead | Care provider |
 | --- | --- | --- | --- | --- |
 | Create, edit, and revoke accounts | Yes, except the super admin | No | No | No |
-| Medications and how-to guides | Edit | Edit | Read | Read |
+| Medications | Edit | Edit | Read | Read |
+| How-to guides | Edit | Edit | Edit | Read |
 | Schedule | Edit | Edit | Edit | Read, request coverage |
 | Medication log | Full | Full | Full | Own responses only, written by the server |
 | Handover notes, activities, messages | Yes | Yes | Yes | Yes |
@@ -28,7 +29,7 @@ Parents use their own admin accounts. Revocation runs through the `revokeUserAcc
 4. Shift status in the corner. It turns on during that person's scheduled hours and off when those hours end. Tapping the corner holds the other status until the schedule matches it again. Off shift stops medication reminders for that person only. Messages and coverage requests still notify them.
 5. Activities for things to do with Andrew. Anyone on the team can add or update. Admins can remove.
 6. A care-team thread for care providers and team leads, plus a message to one person. The sender or an admin can delete a message.
-7. Admin-managed how-to guides.
+7. How-to guides. A parent or a team lead assigns each guide to morning, afternoon, or evening. It shows under To-do on the home screen for anyone whose shift that day covers that part of the day.
 
 Each person can tap one emoji on More. The choices are a short care list of faces, hands, animals, hearts, and stars. Until they pick one, their name shows a plain initial. An admin can clear someone else's emoji. Teammates see the mark next to that person's name. Each person can also choose a color scheme there, or a color from the chart. That choice changes only their screen. People who have not chosen one see the team scheme from Settings. When the super admin adds a person, they choose Gmail or Email code. The person is added to the roster and is not emailed, so weekly shifts can be set first. Enable sends the HammondCare link and turns sign-in on. Email code uses no password; each sign-in sends a 6-digit code. The care team thread notifies care providers and team leads. Message one person to choose someone individually. The person who wrote a message can delete it, and so can an admin. Password changes stay on a schedule for password accounts only, including the super admin. The default is 183 days (about six months). The super admin can change that interval in Settings. The care-home clock defaults to America/Los_Angeles, and the super admin can change that timezone in Settings too. Settings holds the team color scheme: Rose, Blush, Lilac, Berry, or Plum. Rose is the default, and it is what anyone sees until they pick their own. The palette is built for the women on the care team. A password account still confirms the email with a 6-digit code on first sign-in.
 
