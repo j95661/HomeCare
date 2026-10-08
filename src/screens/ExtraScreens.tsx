@@ -863,13 +863,13 @@ function CollapseSection({
 
 function schemeSummary(personal: string, teamId: string): { label: string; accent: string } {
   const team = COLOR_SCHEMES.find((item) => item.id === teamId);
-  const teamAccent = team?.accent ?? "#7a2948";
+  const teamAccent = team?.accent ?? COLOR_SCHEMES[0].accent;
   if (!personal) return { label: team ? `Team · ${team.label}` : "Team default", accent: teamAccent };
   const named = COLOR_SCHEMES.find((item) => item.id === personal);
   if (named) return { label: named.label, accent: named.accent };
   const custom = parseCustomColor(personal);
   if (custom) return { label: custom, accent: custom };
-  return { label: team?.label ?? "Rose", accent: teamAccent };
+  return { label: team?.label ?? COLOR_SCHEMES[0].label, accent: teamAccent };
 }
 
 function SchemePicker() {
@@ -879,7 +879,7 @@ function SchemePicker() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || "Rose";
+  const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || COLOR_SCHEMES[0].label;
   const summary = schemeSummary(session.personalColorScheme, session.colorScheme);
 
   useEffect(() => {
@@ -940,7 +940,7 @@ function SchemePicker() {
             setSaved(false);
           }}
         >
-          <span className="swatch" style={{ background: COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.accent ?? "#7a2948" }} />
+          <span className="swatch" style={{ background: COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.accent ?? COLOR_SCHEMES[0].accent }} />
           Team default ({teamLabel})
         </button>
         {COLOR_SCHEMES.map((item) => (
@@ -981,7 +981,7 @@ function SchemePicker() {
         <input
           type="color"
           data-testid="color-chart-input"
-          value={parseCustomColor(choice) ?? "#7a2948"}
+          value={parseCustomColor(choice) ?? COLOR_SCHEMES[0].accent}
           onChange={(event) => {
             setChoice(`custom:${event.target.value.toLowerCase()}`);
             setSaved(false);

@@ -5,7 +5,8 @@ import { COLOR_CHART, COLOR_SCHEMES, buildPalette, contrastRatio, isColorScheme 
 describe("color schemes", () => {
   it("offers the same schemes on the server and the screen", () => {
     expect(COLOR_SCHEMES.map((scheme) => scheme.id)).toEqual([...COLOR_SCHEME_IDS]);
-    expect(DEFAULT_COLOR_SCHEME).toBe("rose");
+    expect(DEFAULT_COLOR_SCHEME).toBe("sky");
+    expect(isColorScheme("sky")).toBe(true);
     expect(isColorScheme("plum")).toBe(true);
     expect(isColorScheme("forest")).toBe(false);
     expect(clientIsColorScheme("lilac")).toBe(true);
@@ -31,5 +32,12 @@ describe("color schemes", () => {
       expect(contrastRatio("#ffffff", palette.vars["--ok"])).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio("#ffffff", palette.vars["--warn"])).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it("keeps the sky default readable", () => {
+    expect(contrastRatio("#ffffff", "#0277bd")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio("#0b3f66", "#eff4fb")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio("#0b3f66", "#fbdf22")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio("#3d6484", "#eff4fb")).toBeGreaterThanOrEqual(4.5);
   });
 });

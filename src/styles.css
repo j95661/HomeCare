@@ -1,4 +1,32 @@
 :root,
+[data-theme="sky"] {
+  color-scheme: light;
+  --bg: #eff4fb;
+  --ink: #0b3f66;
+  --panel: #ffffff;
+  --line: #7fa8c4;
+  --accent: #0277bd;
+  --on-accent: #fff;
+  --ok: #0e7a45;
+  --off: #0b3f66;
+  --warn: #9c1d3a;
+  --muted: #3d6484;
+  --focus: #025f96;
+  --mine: #d7ebf8;
+  --glow: #d4ecfb;
+  font-family: "Avenir Next", "Segoe UI", "Gill Sans", system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  font-size: 18px;
+  line-height: 1.35;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+[data-theme="sky"] button.shift-status.off {
+  background: #fbdf22;
+  color: #0b3f66;
+  border-color: #0b3f66;
+}
+
 [data-theme="rose"] {
   color-scheme: light;
   --bg: #fbf4f6;
@@ -14,11 +42,6 @@
   --focus: #6b1e78;
   --mine: #f8e4eb;
   --glow: #f6d0dc;
-  font-family: "Avenir Next", "Segoe UI", "Gill Sans", system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
-  font-size: 18px;
-  line-height: 1.35;
-  color: var(--ink);
-  background: var(--bg);
 }
 
 [data-theme="blush"] {

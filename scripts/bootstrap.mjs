@@ -109,9 +109,9 @@ await settingsRef.set(
     passwordMaxAgeDays: settings.exists && settings.get("passwordMaxAgeDays") ? settings.get("passwordMaxAgeDays") : MAX_DAYS,
     timezone,
     snoozeMinutes: settings.exists && settings.get("snoozeMinutes") ? settings.get("snoozeMinutes") : 10,
-    colorScheme: ["rose", "blush", "lilac", "berry", "plum"].includes(String(settings.get("colorScheme") || ""))
+    colorScheme: ["sky", "rose", "blush", "lilac", "berry", "plum"].includes(String(settings.get("colorScheme") || ""))
       ? settings.get("colorScheme")
-      : "rose",
+      : "sky",
     superAdminEmail: email,
     superAdminUid: superUid,
   },
