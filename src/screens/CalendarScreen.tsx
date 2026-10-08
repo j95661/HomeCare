@@ -33,6 +33,13 @@ import { useSession } from "../session";
 import { addDays, addMonths, formatClock, formatDay, formatIso, monthGrid, startOfWeek, todayISO } from "../time";
 import type { Person, ShiftRequest } from "../types";
 
+function patternSpan(template: ShiftTemplate): string {
+  const parts: string[] = [];
+  if (template.effectiveFrom !== "2000-01-01") parts.push(`Starts ${formatDay(template.effectiveFrom)}`);
+  if (template.effectiveUntil) parts.push(`Ends ${formatDay(template.effectiveUntil)}`);
+  return parts.length > 0 ? parts.join(" · ") : "Every week";
+}
+
 export function CalendarScreen() {
   const session = useSession();
   const [mode, setMode] = useState<"day" | "week" | "month">("day");
@@ -288,6 +295,7 @@ export function CalendarScreen() {
                 <strong>
                   {WEEKDAY_NAMES[template.weekday] ?? "Weekday"} · {formatClock(template.start)} – {formatClock(template.end)}
                 </strong>
+                <p className="meta">{patternSpan(template)}</p>
                 <Field label="Person">
                   <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
                     {people.map((person) => (
