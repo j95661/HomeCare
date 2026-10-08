@@ -52,6 +52,16 @@ service firebase.storage {
         );
     }
 
+    match /backgrounds/{uid}/{fileName} {
+      allow read: if isActiveUser() && request.auth.uid == uid;
+      allow create: if isActiveUser()
+        && request.auth.uid == uid
+        && fileName.matches('^[A-Za-z0-9._-]{1,80}$')
+        && isAllowedImage();
+      allow delete: if isActiveUser() && request.auth.uid == uid;
+      allow update: if false;
+    }
+
     match /handover/{uid}/{fileName} {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && uid == request.auth.uid && isAllowedImage();

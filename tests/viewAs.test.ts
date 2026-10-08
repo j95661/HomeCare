@@ -14,6 +14,7 @@ const account: Session = {
   passwordMaxAgeDays: 183,
   colorScheme: "rose",
   personalColorScheme: "custom:#29327a",
+  backgroundImage: "backgrounds/dad/p1.jpg",
 };
 
 const nora: ViewIdentity = {
@@ -42,6 +43,7 @@ describe("view as employee", () => {
       personalColorScheme: "lilac",
       email: "dad@example.com",
       timezone: "America/Los_Angeles",
+      backgroundImage: "backgrounds/dad/p1.jpg",
       viewingAs: true,
     });
 

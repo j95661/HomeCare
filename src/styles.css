@@ -127,6 +127,33 @@ body {
     var(--bg);
 }
 
+html[data-background="on"] body {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 58%, transparent), color-mix(in srgb, var(--bg) 72%, transparent)),
+    var(--app-background);
+  background-size: auto, cover;
+  background-position: center, center;
+  background-attachment: fixed, fixed;
+  background-repeat: no-repeat;
+}
+
+html[data-background="on"] .panel,
+html[data-background="on"] .card {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+}
+
+html[data-background="on"] .nav {
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+}
+
+.background-preview {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
 button, input, select, textarea {
   font: inherit;
   color: var(--ink);

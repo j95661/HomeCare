@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import { doc, setDoc, Timestamp } from "firebase/firestore";
-import { getBytes, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getBytes, ref, uploadBytes } from "firebase/storage";
 
 const PROJECT_ID = "demo-family-care";
 let testEnv: RulesTestEnvironment;
@@ -97,5 +97,15 @@ describe("storage pictures", () => {
     await assertSucceeds(getBytes(ref(testEnv.authenticatedContext("sam").storage(), "messages/direct_pat_sam/pat/pic.png")));
     await assertSucceeds(getBytes(ref(testEnv.authenticatedContext("admin").storage(), "messages/direct_pat_sam/pat/pic.png")));
     await assertFails(getBytes(ref(testEnv.authenticatedContext("lead").storage(), "messages/direct_pat_sam/pat/pic.png")));
+  });
+
+  it("lets a person keep a background picture that only they can open or remove", async () => {
+    await assertSucceeds(put("pat", "backgrounds/pat/p1.jpg", png, "image/jpeg"));
+    await assertFails(put("pat", "backgrounds/sam/p1.jpg", png, "image/jpeg"));
+    await assertFails(put("pat", "backgrounds/pat/note.txt", png, "text/plain"));
+    await assertSucceeds(getBytes(ref(testEnv.authenticatedContext("pat").storage(), "backgrounds/pat/p1.jpg")));
+    await assertFails(getBytes(ref(testEnv.authenticatedContext("sam").storage(), "backgrounds/pat/p1.jpg")));
+    await assertFails(deleteObject(ref(testEnv.authenticatedContext("sam").storage(), "backgrounds/pat/p1.jpg")));
+    await assertSucceeds(deleteObject(ref(testEnv.authenticatedContext("pat").storage(), "backgrounds/pat/p1.jpg")));
   });
 });

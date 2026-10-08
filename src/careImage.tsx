@@ -12,7 +12,15 @@ export function careImagePath(folder: string, file: File): string {
   return `${folder}/${imageObjectName(file)}`;
 }
 
-export function CareImage({ path }: { path: string }) {
+export function CareImage({
+  path,
+  className = "care-image",
+  testId = "care-image",
+}: {
+  path: string;
+  className?: string;
+  testId?: string;
+}) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
 
@@ -38,7 +46,7 @@ export function CareImage({ path }: { path: string }) {
 
   if (failed) return <p className="meta">Picture unavailable</p>;
   if (!url) return null;
-  return <img className="care-image" src={url} alt="" data-testid="care-image" />;
+  return <img className={className} src={url} alt="" data-testid={testId} />;
 }
 
 export function usePictureDraft() {

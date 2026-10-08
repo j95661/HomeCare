@@ -187,6 +187,10 @@ describe("security rules", () => {
     await assertSucceeds(updateDoc(doc(dbFor("pat"), "users/pat"), { onShift: false }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { emoji: "🌻" }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { colorScheme: "plum" }));
+    await assertSucceeds(updateDoc(doc(dbFor("pat"), "users/pat"), { backgroundImage: "backgrounds/pat/p1.jpg" }));
+    await assertSucceeds(updateDoc(doc(dbFor("pat"), "users/pat"), { backgroundImage: "" }));
+    await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { backgroundImage: "backgrounds/sam/p1.jpg" }));
+    await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { backgroundImage: "handover/pat/p1.jpg" }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/sam"), { onShift: true }));
   });
 
