@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addMonths, formatClock, formatIso, formatStamp, monthGrid, startOfWeek, zonedParts } from "../src/time";
+import { addDays, addMonths, formatClock, formatIso, formatMonth, formatStamp, monthGrid, startOfWeek, zonedParts } from "../src/time";
 import { zonedParts as serverZonedParts } from "../functions/src/logic/time";
 
 describe("care calendar dates", () => {
@@ -25,6 +25,11 @@ describe("care calendar dates", () => {
     expect(cells[0]).toEqual({ date: "2026-09-27", inMonth: false });
     expect(cells.find((cell) => cell.date === "2026-10-01")).toEqual({ date: "2026-10-01", inMonth: true });
     expect(cells.filter((cell) => cell.inMonth)).toHaveLength(31);
+  });
+
+  it("names the month for the monthly calendar", () => {
+    expect(formatMonth("2026-10-08")).toBe("October");
+    expect(formatMonth("2026-01-15")).toBe("January");
   });
 
   it("formats clock times for a shift", () => {

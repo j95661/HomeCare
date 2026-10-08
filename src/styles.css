@@ -286,11 +286,28 @@ button.person-choice { display: grid; justify-items: start; gap: 2px; }
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
 }
+.month-name {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  text-align: center;
+}
 .dow { text-align: center; font-size: 0.75rem; color: var(--muted); }
 .day-cell {
-  min-height: 48px;
-  padding: 4px;
-  font-size: 0.95rem;
+  min-height: 64px;
+  padding: 4px 2px;
+  font-size: 0.85rem;
+  line-height: 1.15;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 2px;
+}
+.day-number { font-size: 0.95rem; }
+.month-initials {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
 }
 .muted-cell { opacity: 0.45; }
 .exception-mark {
