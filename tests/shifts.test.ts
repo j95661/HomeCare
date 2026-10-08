@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applyAcceptance, assertCoverageApproval, type ShiftRecord, type ShiftRequestRecord } from "../functions/src/logic/shifts";
+import {
+  applyAcceptance,
+  approveTimeOff,
+  assertAdminTimeOff,
+  assertTeamResponse,
+  offerToCover,
+  returnUnanswered,
+  type ShiftRecord,
+  type ShiftRequestRecord,
+} from "../functions/src/logic/shifts";
 
 const shift: ShiftRecord = {
   userId: "pat",
@@ -31,16 +40,7 @@ describe("shift acceptance", () => {
     ]);
   });
 
-  it("keeps time off and sick leave with the requester when a lead approves", () => {
-    const timeOff = applyAcceptance(shift, request({ type: "day_off" }), { uid: "lead", name: "Lead" }, "2026-10-07T13:00:00Z");
-    expect(timeOff.shift).toEqual(shift);
-    expect(timeOff.request.history.at(-1)).toEqual({ action: "approved", uid: "lead", name: "Lead", at: "2026-10-07T13:00:00Z" });
-    const sick = applyAcceptance(shift, request({ type: "sick_leave" }), { uid: "admin", name: "Admin" }, "2026-10-07T13:00:00Z");
-    expect(sick.shift.userId).toBe("pat");
-    expect(sick.request.history.at(-1)?.action).toBe("approved");
-  });
-
-  it("rejects a closed request, the requester, and a shift that already moved", () => {
+  it("rejects a closed request, the requester, a shift that already moved, and time off", () => {
     const accepted = applyAcceptance(shift, request(), { uid: "sam", name: "Sam" }, "2026-10-07T13:00:00Z");
     expect(() => applyAcceptance(accepted.shift, accepted.request, { uid: "lead", name: "Lead" }, "2026-10-07T14:00:00Z")).toThrow(
       /no longer open/,
@@ -49,13 +49,37 @@ describe("shift acceptance", () => {
     expect(() => applyAcceptance({ ...shift, userId: "sam", userName: "Sam" }, request(), { uid: "lead", name: "Lead" }, "2026-10-07T13:00:00Z")).toThrow(
       /already changed/,
     );
+    expect(() => applyAcceptance(shift, request({ type: "day_off" }), { uid: "sam", name: "Sam" }, "2026-10-07T13:00:00Z")).toThrow(
+      /wait for an admin/,
+    );
   });
 
-  it("lets any coworker accept a swap and only a lead or admin approve time off", () => {
-    expect(() => assertCoverageApproval("swap", false)).not.toThrow();
-    expect(() => assertCoverageApproval("day_off", true)).not.toThrow();
-    expect(() => assertCoverageApproval("sick_leave", true)).not.toThrow();
-    expect(() => assertCoverageApproval("day_off", false)).toThrow(/super admin, admin, or team lead/);
-    expect(() => assertCoverageApproval("sick_leave", false)).toThrow(/approve time off or sick leave/);
+  it("lets the care team offer to cover and an admin approve that cover", () => {
+    const offered = offerToCover(request({ type: "sick_leave" }), { uid: "sam", name: "Sam" }, "2026-10-07T13:00:00Z");
+    expect(offered.status).toBe("awaiting_admin");
+    expect(offered.coverBy).toBe("sam");
+    expect(offered.history.at(-1)?.action).toBe("offered to cover");
+    const approved = approveTimeOff(shift, offered, { uid: "admin", name: "Admin" }, "2026-10-07T14:00:00Z");
+    expect(approved.kind).toBe("swap");
+    expect(approved.shift).toEqual({ ...shift, userId: "sam", userName: "Sam" });
+    expect(approved.request.history.at(-1)?.action).toBe("approved");
+  });
+
+  it("returns an unanswered request and keeps the day with the requester when an admin approves", () => {
+    const returned = returnUnanswered(request({ type: "day_off" }), "2026-10-08T12:00:00Z", "Pat");
+    expect(returned.status).toBe("awaiting_admin");
+    expect(returned.history.at(-1)?.action).toBe("returned");
+    const approved = approveTimeOff(shift, returned, { uid: "admin", name: "Admin" }, "2026-10-08T13:00:00Z");
+    expect(approved.kind).toBe("day_off");
+    expect(approved.shift.userId).toBe("pat");
+  });
+
+  it("lets care staff respond and only an admin approve time off", () => {
+    expect(() => assertTeamResponse("care_provider")).not.toThrow();
+    expect(() => assertTeamResponse("team_lead")).not.toThrow();
+    expect(() => assertTeamResponse("admin")).toThrow(/care team/);
+    expect(() => assertAdminTimeOff("admin")).not.toThrow();
+    expect(() => assertAdminTimeOff("super_admin")).not.toThrow();
+    expect(() => assertAdminTimeOff("team_lead")).toThrow(/admin can approve/);
   });
 });

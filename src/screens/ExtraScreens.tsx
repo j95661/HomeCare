@@ -807,6 +807,7 @@ export function SettingsScreen() {
   const [days, setDays] = useState(String(session.passwordMaxAgeDays));
   const [timezone, setTimezone] = useState(session.timezone);
   const [snooze, setSnooze] = useState(String(session.snoozeMinutes));
+  const [replyHours, setReplyHours] = useState("24");
   const [scheme, setScheme] = useState(resolveColorScheme(session.colorScheme));
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -819,6 +820,7 @@ export function SettingsScreen() {
         setDays(String(snap.get("passwordMaxAgeDays") ?? session.passwordMaxAgeDays));
         setTimezone(String(snap.get("timezone") ?? session.timezone));
         setSnooze(String(snap.get("snoozeMinutes") ?? session.snoozeMinutes));
+        setReplyHours(String(snap.get("coverageReplyHours") ?? 24));
         setScheme(resolveColorScheme(String(snap.get("colorScheme") || session.colorScheme || "")));
         setEmail(String(snap.get("superAdminEmail") ?? ""));
       },
@@ -838,6 +840,7 @@ export function SettingsScreen() {
         passwordMaxAgeDays: Number(days),
         timezone,
         snoozeMinutes: Number(snooze),
+        coverageReplyHours: Number(replyHours),
         colorScheme: scheme,
       });
       setSaved(true);
@@ -860,6 +863,14 @@ export function SettingsScreen() {
       </Field>
       <Field label="Snooze minutes">
         <input inputMode="numeric" value={snooze} onChange={(event) => setSnooze(event.target.value)} />
+      </Field>
+      <Field label="Hours for the team to respond to time off">
+        <input
+          inputMode="numeric"
+          data-testid="coverage-reply-hours"
+          value={replyHours}
+          onChange={(event) => setReplyHours(event.target.value)}
+        />
       </Field>
       <fieldset className="schemes">
         <legend>Team color scheme</legend>

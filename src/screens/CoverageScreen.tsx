@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
-import { Empty, Field, Notice } from "../components";
+import { Empty, Field, Modal, Notice } from "../components";
 import { withEmoji } from "../emoji";
 import { db } from "../firebase";
-import { canEditWeeklyPattern, canManageSchedule } from "../roles";
+import { canApproveTimeOff, canEditWeeklyPattern, canManageSchedule, isCareStaff } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import {
   coverageRequestLabel,
@@ -12,8 +12,8 @@ import {
   exceptionLabel,
   isAwayKind,
   resolveRange,
+  showCoverageRequest,
   templateFromData,
-  visibleCoverageRequests,
   type CoverageKind,
   type ResolvedShift,
   type ShiftException,
@@ -40,6 +40,9 @@ export function CoverageScreen() {
   const [shiftId, setShiftId] = useState("");
   const [withId, setWithId] = useState("");
   const [swapped, setSwapped] = useState("");
+  const [replyHours, setReplyHours] = useState(24);
+  const [draft, setDraft] = useState<{ shift: ResolvedShift; type: CoverageKind } | null>(null);
+  const [reason, setReason] = useState("");
 
   const windowShifts = useMemo(
     () => resolveRange(today, end, templates, exceptions).filter((shift) => shift.templateId),
@@ -84,14 +87,20 @@ export function CoverageScreen() {
           ),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
+      onSnapshot(doc(db, "settings/app"), (snap) => {
+        const hours = Number(snap.get("coverageReplyHours"));
+        setReplyHours(Number.isInteger(hours) && hours >= 1 && hours <= 168 ? hours : 24);
+      }),
     ];
     return () => unsubs.forEach((unsub) => unsub());
   }, [today, end, session]);
 
-  const pendingByShift = new Map(
-    requests.filter((item) => item.status === "pending").map((item) => [item.shiftId, item.type]),
+  const openByShift = new Map(
+    requests
+      .filter((item) => item.status === "pending" || item.status === "awaiting_admin")
+      .map((item) => [item.shiftId, item]),
   );
-  const shownRequests = visibleCoverageRequests(requests);
+  const shownRequests = requests.filter((item) => showCoverageRequest(item, session.role, session.uid));
 
   async function assignSwap() {
     if (!selectedShift || !withId) return;
@@ -116,11 +125,30 @@ export function CoverageScreen() {
     }
   }
 
-  async function requestCoverage(shift: ResolvedShift, type: CoverageKind) {
+  function openRequest(shift: ResolvedShift, type: CoverageKind) {
+    setReason("");
+    setError("");
+    setDraft({ shift, type });
+  }
+
+  async function sendRequest() {
+    if (!draft) return;
+    const note = reason.trim();
+    if (!note) {
+      setError("Add a reason for the team.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await call("requestShiftCoverage", { templateId: shift.templateId, date: shift.date, type });
+      await call("requestShiftCoverage", {
+        templateId: draft.shift.templateId,
+        date: draft.shift.date,
+        type: draft.type,
+        reason: note,
+      });
+      setDraft(null);
+      setReason("");
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -246,15 +274,15 @@ export function CoverageScreen() {
         </section>
       ) : null}
       <p className="hint">
-        These days are yours for the next four weeks. A swap waits for someone else to accept it. Time off and sick leave wait for a super admin, admin, or team lead to approve.
+        These days are yours for the next four weeks. A swap, time off, or sick leave goes to the care team with your reason. The team has {replyHours}{" "}
+        hours to respond to time off and sick leave. After that, the request comes back to you and an admin approves it.
       </p>
       {mine.length === 0 ? <Empty>No days on your schedule in the next four weeks.</Empty> : null}
       <ul className="list">
         {mine.map((shift) => {
-          const pendingType = pendingByShift.get(shift.id);
-          const pending = pendingType !== undefined;
+          const open = openByShift.get(shift.id);
           return (
-            <li key={shift.id} className="card" data-testid="coverage-day" data-date={shift.date} data-pending={pending ? "true" : "false"}>
+            <li key={shift.id} className="card" data-testid="coverage-day" data-date={shift.date} data-pending={open ? "true" : "false"}>
               {shift.source === "exception" ? (
                 <span className="badge" data-testid="exception-badge">
                   {exceptionLabel(shift.kind)}
@@ -264,35 +292,28 @@ export function CoverageScreen() {
               <p>
                 {formatClock(shift.start)} – {formatClock(shift.end)}
               </p>
-              {pending ? (
+              {open ? (
                 <p className="meta" data-testid="coverage-waiting">
-                  {isAwayKind(pendingType)
-                    ? "Waiting for a super admin, admin, or team lead to approve."
-                    : "Waiting for someone else to accept this swap."}
+                  {waitingLine(open)}
                 </p>
               ) : null}
               <div className="stack">
-                <button
-                  type="button"
-                  data-testid="request-swap"
-                  disabled={busy || pending}
-                  onClick={() => void requestCoverage(shift, "swap")}
-                >
+                <button type="button" data-testid="request-swap" disabled={busy || Boolean(open)} onClick={() => openRequest(shift, "swap")}>
                   Swap
                 </button>
                 <button
                   type="button"
                   data-testid="request-day-off"
-                  disabled={busy || pending}
-                  onClick={() => void requestCoverage(shift, "day_off")}
+                  disabled={busy || Boolean(open)}
+                  onClick={() => openRequest(shift, "day_off")}
                 >
                   Time off
                 </button>
                 <button
                   type="button"
                   data-testid="request-sick"
-                  disabled={busy || pending}
-                  onClick={() => void requestCoverage(shift, "sick_leave")}
+                  disabled={busy || Boolean(open)}
+                  onClick={() => openRequest(shift, "sick_leave")}
                 >
                   Sick leave
                 </button>
@@ -312,8 +333,10 @@ export function CoverageScreen() {
                 {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} ·{" "}
                 {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
               </p>
+              {item.reason ? <p data-testid="coverage-reason-text">{item.reason}</p> : null}
               <p className="meta">
-                {item.status}
+                {coverageStatusLabel(item.status)}
+                {item.coverByName ? ` · ${withEmoji(item.coverByName, people.find((person) => person.id === item.coverBy)?.emoji)} offered to cover` : ""}
                 {item.acceptedByName
                   ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
                   : ""}
@@ -326,18 +349,23 @@ export function CoverageScreen() {
                   </li>
                 ))}
               </ul>
-              {item.status === "pending" && item.requesterId !== session.uid && (!isAwayKind(item.type) || canAssign) ? (
+              {item.status === "pending" && item.requesterId !== session.uid && isCareStaff(session.role) ? (
                 <button
                   type="button"
                   className="primary"
-                  data-testid={isAwayKind(item.type) ? "approve-coverage" : "accept-coverage"}
+                  data-testid="accept-coverage"
                   disabled={busy}
                   onClick={() => void accept(item.id)}
                 >
-                  {isAwayKind(item.type) ? "Approve" : "Accept"}
+                  {isAwayKind(item.type) ? "I can cover this" : "Accept"}
                 </button>
               ) : null}
-              {item.status === "pending" && item.requesterId === session.uid ? (
+              {item.status === "awaiting_admin" && isAwayKind(item.type) && item.requesterId !== session.uid && canApproveTimeOff(session.role) ? (
+                <button type="button" className="primary" data-testid="approve-coverage" disabled={busy} onClick={() => void accept(item.id)}>
+                  Approve
+                </button>
+              ) : null}
+              {(item.status === "pending" || item.status === "awaiting_admin") && item.requesterId === session.uid ? (
                 <button type="button" data-testid="cancel-coverage" disabled={busy} onClick={() => void cancel(item.id)}>
                   Cancel request
                 </button>
@@ -351,7 +379,45 @@ export function CoverageScreen() {
           ))}
         </ul>
       </section>
+      {draft ? (
+        <Modal
+          title={draft.type === "swap" ? "Request a swap" : draft.type === "sick_leave" ? "Request sick leave" : "Request time off"}
+          onClose={() => setDraft(null)}
+        >
+          <p>
+            {formatDay(draft.shift.date)} · {formatClock(draft.shift.start)} – {formatClock(draft.shift.end)}
+          </p>
+          <p className="hint">
+            {isAwayKind(draft.type)
+              ? `The care team has ${replyHours} hours to offer to cover this. Then it comes back to you and an admin approves it.`
+              : "The care team can accept this swap from Notice."}
+          </p>
+          <Field label="Reason for the team">
+            <textarea data-testid="coverage-reason" value={reason} onChange={(event) => setReason(event.target.value)} rows={3} />
+          </Field>
+          <button type="button" className="primary" data-testid="coverage-send" disabled={busy || !reason.trim()} onClick={() => void sendRequest()}>
+            Send to the care team
+          </button>
+        </Modal>
+      ) : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );
+}
+
+function waitingLine(item: ShiftRequest): string {
+  if (item.status === "awaiting_admin") {
+    return item.coverByName
+      ? `${item.coverByName} offered to cover this. Waiting for an admin to approve.`
+      : "Nobody responded. Waiting for an admin to approve.";
+  }
+  if (isAwayKind(item.type)) return "Waiting for someone on the care team to cover this.";
+  return "Waiting for someone on the care team to accept this swap.";
+}
+
+function coverageStatusLabel(status: string): string {
+  if (status === "pending") return "Waiting for the care team";
+  if (status === "awaiting_admin") return "Waiting for an admin";
+  if (status === "accepted") return "Accepted";
+  return status;
 }

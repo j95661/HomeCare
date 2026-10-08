@@ -26,6 +26,7 @@ import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
 import { canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnabled, isRole, type Role } from "./logic/roles";
 import {
+  adminRecipients,
   careTeamRecipients,
   coverageRecipients,
   directRecipients,
@@ -48,12 +49,23 @@ import {
   shiftKey,
   templateApplies,
   templateFromData,
+  type CoverageKind,
 } from "./logic/schedule";
-import { applyAcceptance, assertCoverageApproval, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
+import { adminReviewText, replyDeadline, shouldReturnUnanswered, unansweredReplyText } from "./logic/coverage";
+import {
+  applyAcceptance,
+  approveTimeOff,
+  assertAdminTimeOff,
+  assertTeamResponse,
+  offerToCover,
+  returnUnanswered,
+  type ShiftRecord,
+  type ShiftRequestRecord,
+} from "./logic/shifts";
 import { handoverNoteDay, shouldArchiveHandover } from "./logic/handover";
 import { zonedParts } from "./logic/time";
 import { deviceActedAt, isMedAction, normalizeActionId } from "./logic/medLog";
-import { coverageMessageText, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
+import { coverageMessageText, coverageWhen, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
 
@@ -797,6 +809,7 @@ export const updateAppSettings = onCall(callable, async (request) => {
   const body = asObject(request.data);
   const passwordMaxAgeDays = Number(body.passwordMaxAgeDays);
   const snoozeMinutes = Number(body.snoozeMinutes);
+  const coverageReplyHours = Number(body.coverageReplyHours);
   const timezone = String(body.timezone ?? "");
   const colorScheme = String(body.colorScheme ?? DEFAULT_COLOR_SCHEME);
   if (!Number.isInteger(passwordMaxAgeDays) || passwordMaxAgeDays < 1 || passwordMaxAgeDays > 730) {
@@ -804,6 +817,9 @@ export const updateAppSettings = onCall(callable, async (request) => {
   }
   if (!Number.isInteger(snoozeMinutes) || snoozeMinutes < 1 || snoozeMinutes > 60) {
     throw new HttpsError("invalid-argument", "Snooze must be a whole number of minutes from 1 to 60.");
+  }
+  if (!Number.isInteger(coverageReplyHours) || coverageReplyHours < 1 || coverageReplyHours > 168) {
+    throw new HttpsError("invalid-argument", "Team response time must be a whole number of hours from 1 to 168.");
   }
   try {
     assertTimezone(timezone);
@@ -813,7 +829,7 @@ export const updateAppSettings = onCall(callable, async (request) => {
   if (!isColorScheme(colorScheme)) {
     throw new HttpsError("invalid-argument", "Choose a color scheme.");
   }
-  await db.doc("settings/app").update({ passwordMaxAgeDays, snoozeMinutes, timezone, colorScheme });
+  await db.doc("settings/app").update({ passwordMaxAgeDays, snoozeMinutes, coverageReplyHours, timezone, colorScheme });
   const users = await db.collection("users").get();
   await Promise.all(
     users.docs.map((doc) => {
@@ -1087,8 +1103,15 @@ export const archiveHandoverNotes = onSchedule({ schedule: "every 60 minutes", t
 export const dispatchMedicationReminders = onSchedule(
   { schedule: "every 1 minutes", timeZone: "Etc/UTC" },
   async () => {
-    const count = await dispatchDueReminders(new Date());
+    const now = new Date();
+    const count = await dispatchDueReminders(now);
     logger.info(`Medication reminder pass sent ${count}`);
+    try {
+      const returned = await reviewCoverageReplies(now);
+      logger.info(`Returned ${returned} unanswered time-off requests`);
+    } catch (error) {
+      logger.error("Coverage reply review failed", error);
+    }
   },
 );
 
@@ -1114,14 +1137,14 @@ export const assignShiftSwap = onCall(callable, async (request) => {
   const templateSnap = await templateRef.get();
   if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
   const shiftId = shiftKey(templateId, date);
-  await db.runTransaction(async (tx) => {
+  const cancelledIds = await db.runTransaction(async (tx) => {
     const freshTemplate = await tx.get(templateRef);
     const freshAssignee = await tx.get(db.doc(`users/${assigneeId}`));
     const freshExceptions = await tx.get(
       db.collection("shiftExceptions").where("templateId", "==", templateId).where("date", "==", date),
     );
     const openRequests = await tx.get(
-      db.collection("shiftRequests").where("shiftId", "==", shiftId).where("status", "==", "pending"),
+      db.collection("shiftRequests").where("shiftId", "==", shiftId).where("status", "in", ["pending", "awaiting_admin"]),
     );
     if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
     if (!freshAssignee.exists || freshAssignee.get("active") !== true) {
@@ -1162,15 +1185,19 @@ export const assignShiftSwap = onCall(callable, async (request) => {
       });
     }
     const at = new Date().toISOString();
+    const cancelledIds: string[] = [];
     for (const item of openRequests.docs) {
       const history = (item.get("history") as { action: string; uid: string; name: string; at: string }[]) || [];
+      cancelledIds.push(item.id);
       tx.update(item.ref, {
         status: "cancelled",
         resolvedAt: FieldValue.serverTimestamp(),
         history: [...history, { action: "cancelled", uid: caller.uid, name: caller.displayName, at }],
       });
     }
+    return cancelledIds;
   });
+  for (const requestId of cancelledIds) await clearCoverageNotice(requestId);
   return { swapped: true };
 });
 
@@ -1180,9 +1207,11 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
   const templateId = String(body.templateId ?? "");
   const date = String(body.date ?? "");
   const type = coverageKind(body.type);
+  const reason = String(body.reason ?? "").trim().slice(0, 500);
   if (!templateId || !isIsoDate(date) || !type) {
     throw new HttpsError("invalid-argument", "Choose a shift and a request type.");
   }
+  if (!reason) throw new HttpsError("invalid-argument", "Add a reason for the team.");
   const templateSnap = await db.doc(`shiftTemplates/${templateId}`).get();
   if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
   const template = templateFromData(templateId, templateSnap.data() as Record<string, unknown>);
@@ -1196,9 +1225,16 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
     throw new HttpsError("permission-denied", "You can only request coverage for your own shift.");
   }
   const shiftId = shiftKey(templateId, date);
-  const open = await db.collection("shiftRequests").where("shiftId", "==", shiftId).where("status", "==", "pending").limit(1).get();
+  const open = await db
+    .collection("shiftRequests")
+    .where("shiftId", "==", shiftId)
+    .where("status", "in", ["pending", "awaiting_admin"])
+    .limit(1)
+    .get();
   if (!open.empty) throw new HttpsError("failed-precondition", "There is already an open request for that shift.");
   const at = new Date().toISOString();
+  const settings = await readSettings();
+  const replyBy = isAwayKind(type) ? Timestamp.fromDate(replyDeadline(new Date(), settings.coverageReplyHours)) : null;
   const ref = await db.collection("shiftRequests").add({
     type,
     shiftId,
@@ -1208,23 +1244,28 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
     shiftEnd: resolved.end,
     requesterId: caller.uid,
     requesterName: caller.displayName,
+    reason,
     status: "pending",
     acceptedBy: null,
     acceptedByName: null,
+    coverBy: "",
+    coverByName: "",
     patternUpdated: false,
     requestedAt: FieldValue.serverTimestamp(),
+    replyBy,
     resolvedAt: null,
     history: [{ action: "requested", uid: caller.uid, name: caller.displayName, at }],
   });
-  await announceCoverage(caller, { action: "requested", type, date, start: resolved.start, end: resolved.end });
+  await announceCoverage(caller, { action: "requested", type, date, start: resolved.start, end: resolved.end, reason }, ref.id);
   return { id: ref.id };
 });
 
 type LoadedRequest = ShiftRequestRecord & {
   templateId: string;
   shiftDate: string;
-  acceptedBy: string;
   acceptedByName: string;
+  requesterName: string;
+  reason: string;
   patternUpdated: boolean;
   shiftStart: string;
   shiftEnd: string;
@@ -1234,15 +1275,20 @@ async function loadRequest(id: string): Promise<LoadedRequest> {
   const snap = await db.doc(`shiftRequests/${id}`).get();
   if (!snap.exists) throw new HttpsError("not-found", "That request was not found.");
   const status = snap.get("status");
+  const known = status === "accepted" || status === "declined" || status === "cancelled" || status === "pending" || status === "awaiting_admin";
   return {
     type: coverageKind(snap.get("type")) || "swap",
     shiftId: String(snap.get("shiftId") ?? ""),
     templateId: String(snap.get("templateId") ?? ""),
     shiftDate: String(snap.get("shiftDate") ?? ""),
     requesterId: String(snap.get("requesterId") ?? ""),
-    status: status === "accepted" || status === "declined" || status === "cancelled" || status === "pending" ? status : "pending",
+    requesterName: String(snap.get("requesterName") ?? ""),
+    reason: String(snap.get("reason") ?? ""),
+    status: known ? status : "pending",
     acceptedBy: String(snap.get("acceptedBy") ?? ""),
     acceptedByName: String(snap.get("acceptedByName") ?? ""),
+    coverBy: String(snap.get("coverBy") ?? ""),
+    coverByName: String(snap.get("coverByName") ?? ""),
     patternUpdated: snap.get("patternUpdated") === true,
     shiftStart: String(snap.get("shiftStart") ?? ""),
     shiftEnd: String(snap.get("shiftEnd") ?? ""),
@@ -1268,11 +1314,6 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
     .where("date", "==", current.shiftDate)
     .get();
   const exceptions = exceptionSnap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
-  try {
-    assertCoverageApproval(current.type, canManageSchedule(caller.role));
-  } catch (error) {
-    throw new HttpsError("permission-denied", error instanceof Error ? error.message : "Could not approve.");
-  }
   const resolved = resolveDay(current.shiftDate, [template], exceptions).find((shift) => shift.templateId === current.templateId);
   if (!resolved) throw new HttpsError("not-found", "That shift was not found.");
   const shift: ShiftRecord = {
@@ -1282,82 +1323,57 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
     start: resolved.start,
     end: resolved.end,
   };
+  const person = { uid: caller.uid, name: caller.displayName };
+  const at = new Date().toISOString();
+
+  if (isAwayKind(current.type) && current.status === "pending") {
+    let offered: ShiftRequestRecord;
+    try {
+      assertTeamResponse(caller.role);
+      offered = offerToCover(current, person, at);
+    } catch (error) {
+      const permission = error instanceof Error && /care team/.test(error.message);
+      throw new HttpsError(permission ? "permission-denied" : "failed-precondition", error instanceof Error ? error.message : "Could not cover.");
+    }
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(db.doc(`shiftRequests/${id}`));
+      if (fresh.get("status") !== "pending") throw new HttpsError("failed-precondition", "That request is no longer open.");
+      tx.update(fresh.ref, {
+        status: "awaiting_admin",
+        coverBy: offered.coverBy || "",
+        coverByName: offered.coverByName || "",
+        history: offered.history,
+      });
+    });
+    await announceCoverage(person, { action: "covered", type: current.type, date: shift.date, start: shift.start, end: shift.end }, id);
+    await notifyAdmins(current, person.name);
+    return { accepted: true };
+  }
+
+  if (isAwayKind(current.type) && current.status === "awaiting_admin") {
+    let approved: ReturnType<typeof approveTimeOff>;
+    try {
+      assertAdminTimeOff(caller.role);
+      approved = approveTimeOff(shift, current, person, at);
+    } catch (error) {
+      const permission = error instanceof Error && /admin can approve/.test(error.message);
+      throw new HttpsError(permission ? "permission-denied" : "failed-precondition", error instanceof Error ? error.message : "Could not approve.");
+    }
+    await writeCoverageException(id, current, approved.kind, approved.shift.userId, approved.shift.userName, person, approved.request.history);
+    await announceCoverage(person, { action: "accepted", type: current.type, date: shift.date, start: shift.start, end: shift.end }, id);
+    return { accepted: true };
+  }
+
   let next: ReturnType<typeof applyAcceptance>;
   try {
-    next = applyAcceptance(shift, current, { uid: caller.uid, name: caller.displayName }, new Date().toISOString());
+    assertTeamResponse(caller.role);
+    next = applyAcceptance(shift, current, person, at);
   } catch (error) {
-    throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not accept.");
+    const permission = error instanceof Error && /care team/.test(error.message);
+    throw new HttpsError(permission ? "permission-denied" : "failed-precondition", error instanceof Error ? error.message : "Could not accept.");
   }
-  await db.runTransaction(async (tx) => {
-    const requestRef = db.doc(`shiftRequests/${id}`);
-    const freshRequest = await tx.get(requestRef);
-    const freshTemplate = await tx.get(templateRef);
-    const freshExceptions = await tx.get(
-      db.collection("shiftExceptions").where("templateId", "==", current.templateId).where("date", "==", current.shiftDate),
-    );
-    if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
-    if (freshRequest.get("status") !== "pending") {
-      throw new HttpsError("failed-precondition", "That request is no longer open.");
-    }
-    const fresh = templateFromData(current.templateId, freshTemplate.data() as Record<string, unknown>);
-    const freshList = freshExceptions.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
-    const freshResolved = resolveDay(current.shiftDate, [fresh], freshList).find((item) => item.templateId === current.templateId);
-    if (!freshResolved || freshResolved.userId !== current.requesterId) {
-      throw new HttpsError("failed-precondition", "That shift has already changed.");
-    }
-    const existing = freshExceptions.docs.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
-    let write: "create" | "update";
-    try {
-      write = planCoverageWrite({
-        templateUserId: fresh.userId,
-        exceptionUserId: existing ? String(existing.get("userId") ?? "") : null,
-        requesterId: current.requesterId,
-      });
-    } catch (error) {
-      throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not accept.");
-    }
-    const kind = coverageKind(freshRequest.get("type")) || "swap";
-    const assigneeId = isAwayKind(kind) ? current.requesterId : caller.uid;
-    const assigneeName = isAwayKind(kind)
-      ? freshResolved.userName || String(freshRequest.get("requesterName") ?? "")
-      : caller.displayName;
-    if (write === "update" && existing) {
-      tx.update(existing.ref, {
-        userId: assigneeId,
-        userName: assigneeName,
-        kind,
-        requestId: id,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    } else {
-      tx.set(db.collection("shiftExceptions").doc(), {
-        date: current.shiftDate,
-        templateId: current.templateId,
-        kind,
-        userId: assigneeId,
-        userName: assigneeName,
-        start: fresh.start,
-        end: fresh.end,
-        requestId: id,
-        createdBy: caller.uid,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    }
-    tx.update(requestRef, {
-      status: "accepted",
-      acceptedBy: caller.uid,
-      acceptedByName: caller.displayName,
-      resolvedAt: FieldValue.serverTimestamp(),
-      history: next.request.history,
-    });
-  });
-  await announceCoverage(caller, {
-    action: "accepted",
-    type: current.type,
-    date: shift.date,
-    start: shift.start,
-    end: shift.end,
-  });
+  await writeCoverageException(id, current, "swap", person.uid, person.name, person, next.request.history, "pending");
+  await announceCoverage(person, { action: "accepted", type: current.type, date: shift.date, start: shift.start, end: shift.end }, id);
   return { accepted: true };
 });
 
@@ -1433,7 +1449,9 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   const id = String(asObject(request.data).id ?? "");
   const current = await loadRequest(id);
-  if (current.status !== "pending") throw new HttpsError("failed-precondition", "That request is no longer open.");
+  if (current.status !== "pending" && current.status !== "awaiting_admin") {
+    throw new HttpsError("failed-precondition", "That request is no longer open.");
+  }
   if (current.requesterId !== caller.uid) throw new HttpsError("permission-denied", "Only the requester can cancel.");
   await db.doc(`shiftRequests/${id}`).update({
     status: "cancelled",
@@ -1443,46 +1461,257 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
       { action: "cancelled", uid: caller.uid, name: caller.displayName, at: new Date().toISOString() },
     ],
   });
-  await announceCoverage(caller, {
-    action: "cancelled",
-    type: current.type,
-    date: current.shiftDate,
-    start: current.shiftStart,
-    end: current.shiftEnd,
-  });
+  await announceCoverage(
+    caller,
+    {
+      action: "cancelled",
+      type: current.type,
+      date: current.shiftDate,
+      start: current.shiftStart,
+      end: current.shiftEnd,
+    },
+    id,
+  );
   return { cancelled: true };
 });
 
-async function announceCoverage(
-  sender: { uid: string; displayName: string },
-  notice: CoverageNotice,
-): Promise<void> {
-  if (!notice.date || !notice.start || !notice.end) return;
-  const text = coverageMessageText(notice);
+function coverageSenderName(sender: { displayName?: string; name?: string }): string {
+  return sender.displayName || sender.name || "Care team";
+}
+
+async function clearCoverageNotice(requestId: string): Promise<void> {
+  if (!requestId) return;
   const parent = db.doc("groupThread/main");
-  const message = parent.collection("messages").doc();
-  const batch = db.batch();
-  batch.set(message, {
-    senderId: sender.uid,
-    senderName: sender.displayName,
-    text,
-    kind: "coverage",
-    coverageType: notice.type,
-    createdAt: FieldValue.serverTimestamp(),
-  });
-  batch.set(
-    parent,
+  const snap = await parent.get();
+  if (!snap.exists || String(snap.get("noticeRequestId") ?? "") !== requestId) return;
+  await parent.set(
     {
-      type: "group",
-      title: "Care team",
-      lastMessageText: messagePreview(text, false),
-      lastMessageAt: FieldValue.serverTimestamp(),
-      lastSenderId: sender.uid,
-      lastSenderName: sender.displayName,
+      noticeMessageId: "",
+      noticeText: "",
+      noticeSenderId: "",
+      noticeSenderName: "",
+      noticeImagePath: "",
+      noticeAt: FieldValue.serverTimestamp(),
+      noticeKind: "",
+      noticeRequestId: "",
+      noticeCoverageType: "",
     },
     { merge: true },
   );
+}
+
+async function announceCoverage(
+  sender: { uid: string; displayName?: string; name?: string },
+  notice: CoverageNotice,
+  requestId = "",
+): Promise<void> {
+  if (!notice.date || !notice.start || !notice.end) return;
+  const text = coverageMessageText(notice);
+  const name = coverageSenderName(sender);
+  const parent = db.doc("groupThread/main");
+  const existing = await parent.get();
+  const ownsNotice = Boolean(requestId) && String(existing.get("noticeRequestId") ?? "") === requestId;
+  const message = parent.collection("messages").doc();
+  const thread: Record<string, unknown> = {
+    type: "group",
+    title: "Care team",
+    lastMessageText: messagePreview(text, false),
+    lastMessageAt: FieldValue.serverTimestamp(),
+    lastSenderId: sender.uid,
+    lastSenderName: name,
+  };
+  if (requestId && notice.action !== "cancelled") {
+    thread.noticeMessageId = message.id;
+    thread.noticeText = text;
+    thread.noticeSenderId = sender.uid;
+    thread.noticeSenderName = name;
+    thread.noticeImagePath = "";
+    thread.noticeAt = FieldValue.serverTimestamp();
+    thread.noticeKind = "coverage";
+    thread.noticeRequestId = requestId;
+    thread.noticeCoverageType = notice.type;
+  } else if (ownsNotice) {
+    thread.noticeMessageId = "";
+    thread.noticeText = "";
+    thread.noticeSenderId = "";
+    thread.noticeSenderName = "";
+    thread.noticeImagePath = "";
+    thread.noticeAt = FieldValue.serverTimestamp();
+    thread.noticeKind = "";
+    thread.noticeRequestId = "";
+    thread.noticeCoverageType = "";
+  }
+  const batch = db.batch();
+  batch.set(message, {
+    senderId: sender.uid,
+    senderName: name,
+    text,
+    kind: "coverage",
+    coverageType: notice.type,
+    notice: notice.action !== "cancelled",
+    requestId,
+    reason: notice.reason || "",
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  batch.set(parent, thread, { merge: true });
   await batch.commit();
+}
+
+async function notifyAdmins(
+  request: { type: CoverageKind; requesterName: string; shiftDate: string; shiftStart: string; shiftEnd: string },
+  coveredByName: string,
+): Promise<void> {
+  const users = await loadActiveUsers();
+  const recipients = adminRecipients(users).map((user) => user.uid);
+  const when = coverageWhen({ date: request.shiftDate, start: request.shiftStart, end: request.shiftEnd });
+  const body = adminReviewText(request.type, request.requesterName, when, coveredByName);
+  const title = "Time off needs approval";
+  await sendVisiblePush(db, messaging, recipients, {
+    title,
+    body,
+    link: "/?view=coverage",
+    data: { type: "coverage", view: "coverage", title, body },
+  });
+}
+
+async function reviewCoverageReplies(now: Date): Promise<number> {
+  const snap = await db.collection("shiftRequests").where("status", "==", "pending").get();
+  let count = 0;
+  for (const item of snap.docs) {
+    const type = coverageKind(item.get("type"));
+    if (!type) continue;
+    const replyBy = item.get("replyBy")?.toDate?.() ?? null;
+    const coverBy = String(item.get("coverBy") ?? "");
+    if (!shouldReturnUnanswered({ type, status: String(item.get("status") ?? ""), replyBy, coverBy }, now)) continue;
+    const requesterName = String(item.get("requesterName") ?? "");
+    const changed = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(item.ref);
+      const freshType = coverageKind(fresh.get("type"));
+      const freshReply = fresh.get("replyBy")?.toDate?.() ?? null;
+      const freshCover = String(fresh.get("coverBy") ?? "");
+      const freshStatus = String(fresh.get("status") ?? "");
+      if (!freshType || !shouldReturnUnanswered({ type: freshType, status: freshStatus, replyBy: freshReply, coverBy: freshCover }, now)) {
+        return false;
+      }
+      const next = returnUnanswered(
+        {
+          type: freshType,
+          shiftId: String(fresh.get("shiftId") ?? ""),
+          requesterId: String(fresh.get("requesterId") ?? ""),
+          status: "pending",
+          history: (fresh.get("history") as ShiftRequestRecord["history"]) || [],
+        },
+        now.toISOString(),
+        requesterName,
+      );
+      tx.update(fresh.ref, {
+        status: "awaiting_admin",
+        returnedAt: FieldValue.serverTimestamp(),
+        history: next.history,
+      });
+      return true;
+    });
+    if (!changed) continue;
+    count += 1;
+    await clearCoverageNotice(item.id);
+    const when = coverageWhen({
+      date: String(item.get("shiftDate") ?? ""),
+      start: String(item.get("shiftStart") ?? ""),
+      end: String(item.get("shiftEnd") ?? ""),
+    });
+    const body = unansweredReplyText(type, when);
+    const title = "Time off needs you";
+    await sendVisiblePush(db, messaging, [String(item.get("requesterId") ?? "")], {
+      title,
+      body,
+      link: "/?view=coverage",
+      data: { type: "coverage", view: "coverage", title, body },
+    });
+    await notifyAdmins(
+      {
+        type,
+        requesterName,
+        shiftDate: String(item.get("shiftDate") ?? ""),
+        shiftStart: String(item.get("shiftStart") ?? ""),
+        shiftEnd: String(item.get("shiftEnd") ?? ""),
+      },
+      "",
+    );
+  }
+  return count;
+}
+
+async function writeCoverageException(
+  id: string,
+  current: LoadedRequest,
+  kind: CoverageKind,
+  userId: string,
+  userName: string,
+  actor: { uid: string; name: string },
+  history: ShiftRequestRecord["history"],
+  expectedStatus: "pending" | "awaiting_admin" = "awaiting_admin",
+): Promise<void> {
+  const templateRef = db.doc(`shiftTemplates/${current.templateId}`);
+  await db.runTransaction(async (tx) => {
+    const requestRef = db.doc(`shiftRequests/${id}`);
+    const freshTemplate = await tx.get(templateRef);
+    const freshRequest = await tx.get(requestRef);
+    const freshExceptions = await tx.get(
+      db.collection("shiftExceptions").where("templateId", "==", current.templateId).where("date", "==", current.shiftDate),
+    );
+    if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+    if (freshRequest.get("status") !== expectedStatus) {
+      throw new HttpsError("failed-precondition", "That request is no longer open.");
+    }
+    const template = templateFromData(current.templateId, freshTemplate.data() as Record<string, unknown>);
+    const exceptions = freshExceptions.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+    const existing = [...exceptions].sort((a, b) => a.id.localeCompare(b.id))[0];
+    let write: ReturnType<typeof planCoverageWrite>;
+    try {
+      write = planCoverageWrite({
+        templateUserId: template.userId,
+        exceptionUserId: existing ? existing.userId : null,
+        requesterId: current.requesterId,
+      });
+    } catch (error) {
+      throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "That shift has already changed.");
+    }
+    const resolved = resolveDay(current.shiftDate, [template], exceptions).find((shift) => shift.templateId === current.templateId);
+    const start = resolved?.start || current.shiftStart;
+    const end = resolved?.end || current.shiftEnd;
+    const existingDoc = freshExceptions.docs.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
+    if (write === "update" && existingDoc) {
+      tx.update(existingDoc.ref, {
+        userId,
+        userName,
+        kind,
+        start,
+        end,
+        requestId: id,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      tx.set(db.collection("shiftExceptions").doc(), {
+        date: current.shiftDate,
+        templateId: current.templateId,
+        kind,
+        userId,
+        userName,
+        start,
+        end,
+        requestId: id,
+        createdBy: actor.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    tx.update(requestRef, {
+      status: "accepted",
+      acceptedBy: actor.uid,
+      acceptedByName: actor.name,
+      history,
+      resolvedAt: FieldValue.serverTimestamp(),
+    });
+  });
 }
 
 async function notifyMessage(
@@ -1504,6 +1733,15 @@ async function notifyMessage(
     : groupRecipients.map((user) => user.uid);
   const sender = users.find((user) => user.uid === senderId);
   const title = withEmoji(senderName || "New message", sender?.emoji);
+  if (audience === "coverage") {
+    await sendVisiblePush(db, messaging, recipients, {
+      title,
+      body: preview,
+      link: "/?view=home",
+      data: { type: "coverage", view: "home", title, body: preview },
+    });
+    return;
+  }
   await sendVisiblePush(db, messaging, recipients, {
     title,
     body: preview,
@@ -1585,6 +1823,9 @@ export const deleteMessage = onCall(callable, async (request) => {
     update.noticeSenderName = nextNotice ? String(nextNotice.get("senderName") || "") : "";
     update.noticeImagePath = nextNotice ? String(nextNotice.get("imagePath") || "") : "";
     update.noticeAt = nextNotice?.get("createdAt") || FieldValue.serverTimestamp();
+    update.noticeKind = nextNotice && String(nextNotice.get("kind") || "") === "coverage" ? "coverage" : "";
+    update.noticeRequestId = nextNotice ? String(nextNotice.get("requestId") || "") : "";
+    update.noticeCoverageType = nextNotice ? String(nextNotice.get("coverageType") || "") : "";
   }
   await parentRef.update(update);
   return { deleted: true };

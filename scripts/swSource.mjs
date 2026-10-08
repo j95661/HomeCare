@@ -45,6 +45,8 @@ self.addEventListener("notificationclick", (event) => {
     url = "/?view=messages&thread=" + encodeURIComponent(data.threadId);
   } else if (data.type === "swap") {
     url = "/?view=calendar";
+  } else if (data.type === "coverage") {
+    url = data.view === "coverage" ? "/?view=coverage" : "/?view=home";
   }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {

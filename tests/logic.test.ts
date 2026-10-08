@@ -6,7 +6,7 @@ import { buildMulticast } from "../functions/src/logic/push";
 import { coverageMessageText } from "../functions/src/logic/messages";
 import { careTeamRecipients, coverageRecipients, directRecipients, medicationRecipients, messageRecipients, noticeRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
 import { canAssignRole, canRevoke, isProtectedAccount } from "../functions/src/logic/roles";
-import { applyAcceptance } from "../functions/src/logic/shifts";
+import { applyAcceptance, approveTimeOff, offerToCover } from "../functions/src/logic/shifts";
 import { isWithinWindow, zonedParts } from "../functions/src/logic/time";
 import { pushSubscribeBlock } from "../src/pwa";
 
@@ -182,7 +182,7 @@ describe("reminders and push", () => {
     ];
     expect(careTeamRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "sam"]);
     expect(noticeRecipients(roster, "lead").map((user) => user.uid)).toEqual(["pat", "admin", "super", "sam"]);
-    expect(coverageRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "admin", "super", "sam"]);
+    expect(coverageRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "sam"]);
     expect(directRecipients(roster, "pat", ["pat", "hold", "admin"])).toEqual(["admin"]);
   });
 
@@ -240,43 +240,38 @@ describe("reminders and push", () => {
 });
 
 describe("shift acceptance", () => {
-  it("moves a swap to the person who accepts and keeps time off with the requester", () => {
+  it("moves a swap to the person who accepts and keeps uncovered time off with the requester", () => {
+    const shift = { userId: "pat", userName: "Pat", date: "2026-10-08", start: "08:00", end: "16:00" };
+    const history = [{ action: "requested", uid: "pat", name: "Pat", at: "2026-10-07T12:00:00Z" }];
     const swap = applyAcceptance(
-      { userId: "pat", userName: "Pat", date: "2026-10-08", start: "08:00", end: "16:00" },
-      {
-        type: "swap",
-        shiftId: "s1",
-        requesterId: "pat",
-        status: "pending",
-        history: [{ action: "requested", uid: "pat", name: "Pat", at: "2026-10-07T12:00:00Z" }],
-      },
+      shift,
+      { type: "swap", shiftId: "s1", requesterId: "pat", status: "pending", history },
       { uid: "sam", name: "Sam" },
       "2026-10-07T13:00:00Z",
     );
     expect(swap.shift.userId).toBe("sam");
-    const next = applyAcceptance(
-      { userId: "pat", userName: "Pat", date: "2026-10-08", start: "08:00", end: "16:00" },
-      {
-        type: "day_off",
-        shiftId: "s1",
-        requesterId: "pat",
-        status: "pending",
-        history: [{ action: "requested", uid: "pat", name: "Pat", at: "2026-10-07T12:00:00Z" }],
-      },
-      { uid: "lead", name: "Lead" },
+    const offered = offerToCover(
+      { type: "day_off", shiftId: "s1", requesterId: "pat", status: "pending", history },
+      { uid: "sam", name: "Sam" },
       "2026-10-07T13:00:00Z",
     );
-    expect(next.shift.userId).toBe("pat");
-    expect(next.request.status).toBe("accepted");
-    expect(next.request.history.map((entry) => entry.action)).toEqual(["requested", "approved"]);
-    expect(() =>
-      applyAcceptance(
-        next.shift,
-        next.request,
-        { uid: "sam", name: "Sam" },
-        "2026-10-07T14:00:00Z",
-      ),
-    ).toThrow(/no longer open/);
+    const covered = approveTimeOff(shift, offered, { uid: "admin", name: "Admin" }, "2026-10-07T14:00:00Z");
+    expect(covered.kind).toBe("swap");
+    expect(covered.shift.userId).toBe("sam");
+    const waiting = {
+      type: "day_off" as const,
+      shiftId: "s1",
+      requesterId: "pat",
+      status: "awaiting_admin" as const,
+      history,
+    };
+    const open = approveTimeOff(shift, waiting, { uid: "admin", name: "Admin" }, "2026-10-07T14:00:00Z");
+    expect(open.shift.userId).toBe("pat");
+    expect(open.request.status).toBe("accepted");
+    expect(open.request.history.map((entry) => entry.action)).toEqual(["requested", "approved"]);
+    expect(() => applyAcceptance(swap.shift, swap.request, { uid: "lead", name: "Lead" }, "2026-10-07T15:00:00Z")).toThrow(
+      /no longer open/,
+    );
   });
 });
 

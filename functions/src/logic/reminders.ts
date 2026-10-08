@@ -62,9 +62,20 @@ export function noticeRecipients(users: ReminderUser[], senderId: string): Remin
   return messageRecipients(users, senderId);
 }
 
-/** A shift swap or day off in Messages reaches every active employee except the sender. */
+/** A shift swap, time off, or sick leave reaches the care team, not admins. */
 export function coverageRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
-  return messageRecipients(users, senderId);
+  return careTeamRecipients(users, senderId);
+}
+
+/** Admins approve time off and sick leave after the team window. */
+export function adminRecipients(users: ReminderUser[]): ReminderUser[] {
+  return users.filter(
+    (user) =>
+      user.active &&
+      user.otpVerified &&
+      user.enabled !== false &&
+      (user.role === "admin" || user.role === "super_admin"),
+  );
 }
 
 export function directRecipients(users: ReminderUser[], senderId: string, participantIds: string[]): string[] {
