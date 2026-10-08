@@ -69,7 +69,7 @@ describe("storage pictures", () => {
 
   it("keeps group pictures with care staff and direct pictures with the thread", async () => {
     await assertSucceeds(put("pat", "messages/group/pat/meme.gif", gif, "image/gif"));
-    await assertFails(put("admin", "messages/group/admin/meme.gif", gif, "image/gif"));
+    await assertSucceeds(put("admin", "messages/group/admin/meme.gif", gif, "image/gif"));
     await assertSucceeds(put("pat", "messages/direct_pat_sam/pat/pic.png", png, "image/png"));
     await assertFails(put("lead", "messages/direct_pat_sam/lead/pic.png", png, "image/png"));
     await assertSucceeds(getBytes(ref(testEnv.authenticatedContext("sam").storage(), "messages/direct_pat_sam/pat/pic.png")));

@@ -52,9 +52,14 @@ export function messageRecipients(users: ReminderUser[], senderId: string): Remi
   return users.filter((user) => user.active && user.otpVerified && user.enabled !== false && user.uid !== senderId);
 }
 
-/** The care-team thread notifies care providers and team leads only. */
+/** Ordinary care-team chat notifies care providers and team leads only. */
 export function careTeamRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
   return messageRecipients(users, senderId).filter((user) => user.role === "care_provider" || user.role === "team_lead");
+}
+
+/** A Home notice reaches every active person except the sender. */
+export function noticeRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
+  return messageRecipients(users, senderId);
 }
 
 export function directRecipients(users: ReminderUser[], senderId: string, participantIds: string[]): string[] {

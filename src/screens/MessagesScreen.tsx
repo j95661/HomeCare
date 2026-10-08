@@ -18,7 +18,7 @@ import { messagePreview } from "../media";
 import { insertText } from "../messageText";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
-import { canDeleteMessage, isAccountEnabled, isCareStaff } from "../roles";
+import { canDeleteMessage, canPostCareTeamNotice, canPostToCareTeam, isAccountEnabled } from "../roles";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
 import type { ChatMessage, Person, RouteState } from "../types";
@@ -44,7 +44,8 @@ export function MessagesScreen({ thread, go }: Props) {
   const [picking, setPicking] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const careStaff = isCareStaff(session.role);
+  const canPostGroup = canPostToCareTeam(session.role);
+  const postsNotice = canPostCareTeamNotice(session.role);
   const admin = session.role === "super_admin" || session.role === "admin";
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const cursor = useRef({ start: 0, end: 0 });
@@ -167,6 +168,7 @@ export function MessagesScreen({ thread, go }: Props) {
         text: string;
         createdAt: ReturnType<typeof serverTimestamp>;
         imagePath?: string;
+        notice?: boolean;
       } = {
         senderId: session.uid,
         senderName: session.displayName,
@@ -181,13 +183,24 @@ export function MessagesScreen({ thread, go }: Props) {
       const preview = messagePreview(value, Boolean(payload.imagePath));
       const batch = writeBatch(db);
       if (thread === "group") {
-        batch.set(doc(collection(db, "groupThread/main/messages")), payload);
-        batch.update(doc(db, "groupThread/main"), {
+        const ref = doc(collection(db, "groupThread/main/messages"));
+        const threadUpdate: Record<string, unknown> = {
           lastMessageText: preview,
           lastMessageAt: serverTimestamp(),
           lastSenderId: session.uid,
           lastSenderName: session.displayName,
-        });
+        };
+        if (postsNotice) {
+          payload.notice = true;
+          threadUpdate.noticeMessageId = ref.id;
+          threadUpdate.noticeText = value;
+          threadUpdate.noticeSenderId = session.uid;
+          threadUpdate.noticeSenderName = session.displayName;
+          threadUpdate.noticeImagePath = payload.imagePath || "";
+          threadUpdate.noticeAt = serverTimestamp();
+        }
+        batch.set(ref, payload);
+        batch.update(doc(db, "groupThread/main"), threadUpdate);
       } else {
         batch.set(doc(collection(db, `threads/${thread}/messages`)), payload);
         batch.update(doc(db, "threads", thread), {
@@ -226,7 +239,7 @@ export function MessagesScreen({ thread, go }: Props) {
         <button type="button" className="primary" data-testid="care-team" onClick={() => go({ view: "messages", thread: "group" })}>
           Care team
         </button>
-        <p className="meta">{groupPreview || "Messages for care providers and team leads."}</p>
+        <p className="meta">{groupPreview || "Messages for the care team. A lead or parent message also shows on Home."}</p>
         <button type="button" data-testid="message-one-person" onClick={() => setPicking((open) => !open)}>
           Message one person
         </button>
@@ -259,7 +272,7 @@ export function MessagesScreen({ thread, go }: Props) {
   const directIds = directs.find((item) => item.id === thread)?.participantIds;
   const title = thread === "group" ? "Care team" : labelFor(directIds ?? thread.split("_").slice(1));
   const inDirect = thread !== "group" && (!directIds || directIds.includes(session.uid));
-  const showComposer = thread === "group" ? careStaff : inDirect;
+  const showComposer = thread === "group" ? canPostGroup : inDirect;
 
   return (
     <div className="stack">
@@ -283,9 +296,6 @@ export function MessagesScreen({ thread, go }: Props) {
           </li>
         ))}
       </ul>
-      {thread === "group" && !careStaff ? (
-        <p className="hint">Care team messages are for care providers and team leads. You can read them here.</p>
-      ) : null}
       {showComposer ? (
       <form
         className="composer"
@@ -294,6 +304,9 @@ export function MessagesScreen({ thread, go }: Props) {
           void send();
         }}
       >
+        {thread === "group" && postsNotice ? (
+          <p className="hint">This message shows on Home under Notice until each person collapses it.</p>
+        ) : null}
         <label className="field">
           <span>Message</span>
           <textarea

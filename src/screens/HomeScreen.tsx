@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
@@ -17,6 +19,7 @@ import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { db } from "../firebase";
 import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
+import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
@@ -35,6 +38,17 @@ export function HomeScreen({ route, go }: Props) {
   const [exceptions, setExceptions] = useState<ShiftException[]>([]);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [logs, setLogs] = useState<MedLog[]>([]);
+  const [careNotice, setCareNotice] = useState<{
+    id: string;
+    text: string;
+    senderId: string;
+    senderName: string;
+    imagePath: string;
+    at?: { toDate: () => Date };
+  } | null>(null);
+  const [readNoticeId, setReadNoticeId] = useState("");
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const noticeHide = useRef("");
   const [body, setBody] = useState("");
   const picture = usePictureDraft();
   const [noteText, setNoteText] = useState("");
@@ -51,6 +65,31 @@ export function HomeScreen({ route, go }: Props) {
 
   useEffect(() => {
     const unsubs = [
+      onSnapshot(
+        doc(db, "groupThread/main"),
+        (snap) => {
+          const id = String(snap.get("noticeMessageId") || "");
+          if (!id) {
+            setCareNotice(null);
+            return;
+          }
+          const at = snap.get("noticeAt");
+          setCareNotice({
+            id,
+            text: String(snap.get("noticeText") || ""),
+            senderId: String(snap.get("noticeSenderId") || ""),
+            senderName: String(snap.get("noticeSenderName") || ""),
+            imagePath: String(snap.get("noticeImagePath") || ""),
+            at: at && typeof at.toDate === "function" ? (at as { toDate: () => Date }) : undefined,
+          });
+        },
+        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+      ),
+      onSnapshot(
+        doc(db, "groupThread/main/noticeReads", session.uid),
+        (snap) => setReadNoticeId(snap.exists() ? String(snap.get("noticeMessageId") || "") : ""),
+        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+      ),
       onSnapshot(
         query(collection(db, "handoverNotes"), orderBy("createdAt", "desc"), limit(5)),
         (snap) => setNotes(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Handover, "id">) }))),
@@ -114,6 +153,32 @@ export function HomeScreen({ route, go }: Props) {
     const id = window.setInterval(tick, 15000);
     return () => window.clearInterval(id);
   }, [meds, logs, session.onShift, session.timezone, day]);
+
+  const noticeUnread = Boolean(careNotice && careNotice.id !== readNoticeId);
+
+  useEffect(() => {
+    if (careNotice && noticeUnread && noticeHide.current !== careNotice.id) setNoticeOpen(true);
+  }, [careNotice, noticeUnread]);
+
+  async function toggleNotice() {
+    if (noticeOpen && careNotice && noticeUnread) {
+      noticeHide.current = careNotice.id;
+      setNoticeOpen(false);
+      try {
+        await setDoc(doc(db, "groupThread/main/noticeReads", session.uid), {
+          noticeMessageId: careNotice.id,
+          readAt: serverTimestamp(),
+        });
+      } catch (err) {
+        noticeHide.current = "";
+        setNoticeOpen(true);
+        if (isPermissionDenied(err)) session.onDenied();
+        else setError(errorText(err));
+      }
+      return;
+    }
+    setNoticeOpen((open) => !open);
+  }
 
   async function postNote() {
     const text = body.trim();
@@ -180,6 +245,34 @@ export function HomeScreen({ route, go }: Props) {
 
   return (
     <div className="stack">
+      <section className="panel" data-testid="notice" data-read={noticeUnread ? "false" : "true"}>
+        <button
+          type="button"
+          className="collapse-toggle"
+          data-testid="notice-toggle"
+          aria-expanded={noticeOpen}
+          onClick={() => void toggleNotice()}
+        >
+          <span className="collapse-title">Notice</span>
+          <span className="collapse-summary">
+            <span className="notice-summary">
+              {careNotice ? messagePreview(careNotice.text, Boolean(careNotice.imagePath)) : "No notice."}
+            </span>
+            <span aria-hidden="true">{noticeOpen ? "▾" : "▸"}</span>
+          </span>
+        </button>
+        {noticeOpen && careNotice ? (
+          <div className="collapse-body" data-testid="notice-body">
+            {careNotice.text ? <p className="message-body">{careNotice.text}</p> : null}
+            {careNotice.imagePath ? <CareImage path={careNotice.imagePath} /> : null}
+            <p className="meta">
+              {withEmoji(careNotice.senderName, emoji.get(careNotice.senderId))} · {formatStamp(careNotice.at)}
+            </p>
+          </div>
+        ) : null}
+        {noticeOpen && !careNotice ? <p className="empty">No notice.</p> : null}
+      </section>
+
       <section className="panel attach">
         <h2>Handover notes</h2>
         <Field label="What happened this shift?">

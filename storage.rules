@@ -27,10 +27,6 @@ service firebase.storage {
         && passwordWindowOk();
     }
 
-    function isCareStaff() {
-      return isActiveUser() && (userData().role == 'team_lead' || userData().role == 'care_provider');
-    }
-
     function isAllowedImage() {
       return request.resource.size > 0
         && request.resource.size <= 8 * 1024 * 1024
@@ -61,7 +57,7 @@ service firebase.storage {
 
     match /messages/group/{uid}/{fileName} {
       allow read: if isActiveUser();
-      allow create: if isCareStaff() && uid == request.auth.uid && isAllowedImage();
+      allow create: if isActiveUser() && uid == request.auth.uid && isAllowedImage();
       allow update, delete: if false;
     }
 

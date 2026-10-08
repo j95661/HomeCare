@@ -3,7 +3,7 @@ import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount, type Account
 import { canSendOtp, checkOtpCode, hashOtp, OTP_TTL_MS } from "../functions/src/logic/otp";
 import { DEFAULT_PASSWORD_MAX_AGE_DAYS, expiresAt, validatePassword } from "../functions/src/logic/password";
 import { buildMulticast } from "../functions/src/logic/push";
-import { careTeamRecipients, directRecipients, medicationRecipients, messageRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
+import { careTeamRecipients, directRecipients, medicationRecipients, messageRecipients, noticeRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
 import { canAssignRole, canRevoke, isProtectedAccount } from "../functions/src/logic/roles";
 import { applyAcceptance } from "../functions/src/logic/shifts";
 import { isWithinWindow, zonedParts } from "../functions/src/logic/time";
@@ -180,6 +180,7 @@ describe("reminders and push", () => {
       { uid: "sam", displayName: "Sam", role: "care_provider", active: true, otpVerified: true, onShift: false },
     ];
     expect(careTeamRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "sam"]);
+    expect(noticeRecipients(roster, "lead").map((user) => user.uid)).toEqual(["pat", "admin", "super", "sam"]);
     expect(directRecipients(roster, "pat", ["pat", "hold", "admin"])).toEqual(["admin"]);
   });
 
