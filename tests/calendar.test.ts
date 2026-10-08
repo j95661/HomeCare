@@ -28,8 +28,8 @@ describe("care calendar dates", () => {
   });
 
   it("names the month for the monthly calendar", () => {
-    expect(formatMonth("2026-10-08")).toBe("October");
-    expect(formatMonth("2026-01-15")).toBe("January");
+    expect(formatMonth("2026-10-08")).toBe("October 2026");
+    expect(formatMonth("2026-01-15")).toBe("January 2026");
   });
 
   it("formats clock times for a shift", () => {
