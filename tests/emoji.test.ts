@@ -1,23 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEmoji, withEmoji } from "../functions/src/logic/emoji";
+import { normalizeEmoji, PROFILE_EMOJI, withEmoji } from "../functions/src/logic/emoji";
 import { insertText } from "../src/messageText";
+import { PROFILE_EMOJI as clientEmoji, withEmoji as clientWithEmoji } from "../src/profileEmoji";
 
 describe("employee emoji", () => {
-  it("keeps one emoji and clears a blank value", () => {
-    expect(normalizeEmoji("🌻")).toEqual({ ok: true, emoji: "🌻" });
-    expect(normalizeEmoji("  ☕ ")).toEqual({ ok: true, emoji: "☕" });
-    expect(normalizeEmoji("")).toEqual({ ok: true, emoji: "" });
-    expect(normalizeEmoji("   ")).toEqual({ ok: true, emoji: "" });
-    expect(normalizeEmoji("👍🏽")).toEqual({ ok: true, emoji: "👍🏽" });
-    expect(normalizeEmoji("👩‍⚕️")).toEqual({ ok: true, emoji: "👩‍⚕️" });
-    expect(normalizeEmoji("🇺🇸")).toEqual({ ok: true, emoji: "🇺🇸" });
+  it("offers the same care list on the server and the phone", () => {
+    expect(PROFILE_EMOJI).toEqual(clientEmoji);
+    expect(new Set(PROFILE_EMOJI).size).toBe(40);
   });
 
-  it("rejects words, several emoji, and a long string", () => {
+  it("keeps one listed emoji and clears a blank value", () => {
+    expect(normalizeEmoji("😊")).toEqual({ ok: true, emoji: "😊" });
+    expect(normalizeEmoji("  👍 ")).toEqual({ ok: true, emoji: "👍" });
+    expect(normalizeEmoji("")).toEqual({ ok: true, emoji: "" });
+    expect(normalizeEmoji("   ")).toEqual({ ok: true, emoji: "" });
+  });
+
+  it("rejects pasted text, unlisted emoji, and more than one mark", () => {
     expect(normalizeEmoji("Alex")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("🌻🌻")).toEqual({ ok: false, reason: "Choose one emoji." });
-    expect(normalizeEmoji("hi 🌻")).toEqual({ ok: false, reason: "Choose an emoji." });
-    expect(normalizeEmoji("🌻".repeat(20))).toEqual({ ok: false, reason: "Choose one emoji." });
+    expect(normalizeEmoji("🌻")).toEqual({ ok: false, reason: "Choose an emoji." });
+    expect(normalizeEmoji("👍🏽")).toEqual({ ok: false, reason: "Choose an emoji." });
+    expect(normalizeEmoji("👩‍⚕️")).toEqual({ ok: false, reason: "Choose an emoji." });
+    expect(normalizeEmoji("🇺🇸")).toEqual({ ok: false, reason: "Choose an emoji." });
+    expect(normalizeEmoji("😊😊")).toEqual({ ok: false, reason: "Choose an emoji." });
+    expect(normalizeEmoji("hi 😊")).toEqual({ ok: false, reason: "Choose an emoji." });
   });
 
   it("inserts one emoji into a plain message", () => {
@@ -27,9 +33,12 @@ describe("employee emoji", () => {
     expect(insertText("a".repeat(2000), 2000, 2000, "🌸").value).toHaveLength(2000);
   });
 
-  it("prefixes a name only when an emoji is set", () => {
-    expect(withEmoji("Alex", "🌻")).toBe("🌻 Alex");
-    expect(withEmoji("Alex", "")).toBe("Alex");
-    expect(withEmoji("Alex")).toBe("Alex");
+  it("shows the chosen emoji or a plain initial beside the name", () => {
+    expect(withEmoji("Alex", "😊")).toBe("😊 Alex");
+    expect(withEmoji("Alex", "")).toBe("A Alex");
+    expect(withEmoji("Alex")).toBe("A Alex");
+    expect(withEmoji("Alex", "🌻")).toBe("A Alex");
+    expect(withEmoji("  ", "nope")).toBe("?");
+    expect(clientWithEmoji("Sam", "🦊")).toBe("🦊 Sam");
   });
 });

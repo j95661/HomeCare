@@ -1,4 +1,4 @@
-/** Keep this list identical to src/profileEmoji.ts. */
+/** Care-friendly marks a person can put next to their name. No free-text paste. */
 export const PROFILE_EMOJI = [
   "😀",
   "😊",
@@ -53,6 +53,7 @@ export function nameInitial(name: string): string {
   return letter ? letter[0].toLocaleUpperCase() : "?";
 }
 
+/** The mark shown beside a name: their chosen emoji, or a plain initial. */
 export function nameMark(name: string, emoji?: string): string {
   const mark = (emoji ?? "").trim();
   return isProfileEmoji(mark) ? mark : nameInitial(name);
@@ -60,12 +61,4 @@ export function nameMark(name: string, emoji?: string): string {
 
 export function withEmoji(name: string, emoji?: string): string {
   return `${nameMark(name, emoji)} ${name}`.trim();
-}
-
-/** Empty clears the emoji. Anything else must be one mark from the care list. */
-export function normalizeEmoji(input: string): { ok: true; emoji: string } | { ok: false; reason: string } {
-  const value = input.trim();
-  if (!value) return { ok: true, emoji: "" };
-  if (!isProfileEmoji(value)) return { ok: false, reason: "Choose an emoji." };
-  return { ok: true, emoji: value };
 }

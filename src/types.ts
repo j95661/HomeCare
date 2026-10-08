@@ -84,6 +84,7 @@ export type ShiftRequest = {
   requesterId: string;
   requesterName: string;
   status: "pending" | "accepted" | "declined" | "cancelled";
+  acceptedBy?: string | null;
   acceptedByName?: string | null;
   history?: { action: string; uid: string; name: string; at: string }[];
 };

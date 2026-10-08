@@ -251,6 +251,13 @@ h2 { font-size: 1.25rem; }
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
+.emoji-grid.choices {
+  grid-template-columns: repeat(5, 1fr);
+}
+.emoji-grid.choices button.emoji {
+  min-height: 52px;
+  font-size: 1.45rem;
+}
 button.emoji {
   min-height: 56px;
   padding: 6px;

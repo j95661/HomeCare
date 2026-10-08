@@ -7,12 +7,14 @@ import {
   canManageSchedule as serverCanManageSchedule,
   canReviewAllLogs,
   canRevoke,
+  canClearUserEmoji as serverCanClearUserEmoji,
   canWriteSettings,
   isProtectedAccount,
   isRole,
   ROLES,
 } from "../functions/src/logic/roles";
 import {
+  canClearUserEmoji,
   canDeleteActivities,
   canManageGuides,
   canManageMeds,
@@ -41,7 +43,17 @@ describe("role capabilities", () => {
       expect(canReviewLogs(role)).toBe(canReviewAllLogs(role));
       expect(canDeleteActivities(role)).toBe(serverCanDeleteActivities(role));
       expect(isSuperAdmin(role)).toBe(role === "super_admin");
+      expect(canClearUserEmoji(role, "admin", "pat")).toBe(serverCanClearUserEmoji(role, "admin", "pat"));
     }
+  });
+
+  it("lets admins clear another person's emoji", () => {
+    expect(canClearUserEmoji("super_admin", "super", "pat")).toBe(true);
+    expect(canClearUserEmoji("admin", "admin", "pat")).toBe(true);
+    expect(canClearUserEmoji("admin", "admin", "admin")).toBe(false);
+    expect(canClearUserEmoji("team_lead", "lead", "pat")).toBe(false);
+    expect(canClearUserEmoji("care_provider", "pat", "sam")).toBe(false);
+    expect(canClearUserEmoji("admin", "admin", "")).toBe(false);
   });
 
   it("gives medication and guide edits to admins, schedule edits to team leads, and settings to the super admin", () => {

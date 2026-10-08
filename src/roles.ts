@@ -36,3 +36,9 @@ export function canDeleteActivities(role: Role): boolean {
 export function isSuperAdmin(role: Role): boolean {
   return role === "super_admin";
 }
+
+/** Admins can remove the emoji stored on someone else's profile. */
+export function canClearUserEmoji(role: Role, callerUid: string, targetUid: string): boolean {
+  if (role !== "super_admin" && role !== "admin") return false;
+  return targetUid.length > 0 && callerUid !== targetUid;
+}
