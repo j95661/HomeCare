@@ -106,11 +106,14 @@ describe("server-only care records", () => {
 });
 
 describe("profile writes", () => {
-  it("allows only the caller's own on-shift flag", async () => {
+  it("allows only the caller's own shift status", async () => {
     await assertSucceeds(updateDoc(doc(dbFor("super"), "users/super"), { onShift: false }));
+    await assertSucceeds(updateDoc(doc(dbFor("super"), "users/super"), { onShift: true, shiftHold: true }));
+    await assertSucceeds(updateDoc(doc(dbFor("super"), "users/super"), { shiftHold: false }));
     await assertFails(updateDoc(doc(dbFor("super"), "users/super"), { protected: false }));
     await assertFails(updateDoc(doc(dbFor("super"), "users/super"), { role: "admin" }));
     await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { displayName: "Patricia", onShift: true }));
+    await assertFails(updateDoc(doc(dbFor("pat"), "users/pat"), { onShift: true, shiftHold: "yes" }));
     await assertFails(deleteDoc(doc(dbFor("super"), "users/pat")));
   });
 });

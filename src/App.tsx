@@ -10,7 +10,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, runTransaction, where } from "firebase/firestore";
 import { authError, call, errorText } from "./api";
 import { auth, db } from "./firebase";
 import { Field, Notice } from "./components";
@@ -21,7 +21,9 @@ import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
 import { nameMark } from "./emoji";
+import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { applyTheme, resolveColorScheme } from "./themes";
+import { todayISO, zonedParts } from "./time";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
 type Gate =
@@ -87,8 +89,13 @@ function writeRoute(next: RouteState) {
 export function App() {
   const [gate, setGate] = useState<Gate>({ kind: "loading" });
   const [route, setRoute] = useState<RouteState>(() => readRoute());
+  const [shiftDay, setShiftDay] = useState<string | null>(null);
+  const [shiftBusy, setShiftBusy] = useState(false);
+  const [shiftError, setShiftError] = useState("");
   const skipSignOut = useRef(false);
   const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
+  const scheduledRef = useRef(false);
+  const scheduleReadyRef = useRef(false);
 
   const load = useCallback(async (user: User) => {
     try {
@@ -209,15 +216,6 @@ export function App() {
     );
   }, []);
 
-  const setOnShift = useCallback(async (onShift: boolean) => {
-    const user = auth.currentUser;
-    if (!user) return;
-    await updateDoc(doc(db, "users", user.uid), { onShift });
-    setGate((current) =>
-      current.kind === "app" ? { kind: "app", session: { ...current.session, onShift } } : current,
-    );
-  }, []);
-
   const onDenied = useCallback(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -248,8 +246,121 @@ export function App() {
 
   const sessionValue: SessionValue | null = useMemo(() => {
     if (gate.kind !== "app") return null;
-    return { ...gate.session, setOnShift, setEmoji, setColorScheme, onDenied };
-  }, [gate, setOnShift, setEmoji, setColorScheme, onDenied]);
+    return { ...gate.session, setEmoji, setColorScheme, onDenied };
+  }, [gate, setEmoji, setColorScheme, onDenied]);
+
+  const appUid = gate.kind === "app" ? gate.session.uid : "";
+  const appTimezone = gate.kind === "app" ? gate.session.timezone : "";
+
+  useEffect(() => {
+    if (!appUid) {
+      setShiftDay(null);
+      return;
+    }
+    const tick = () => setShiftDay(todayISO(appTimezone));
+    tick();
+    const id = window.setInterval(tick, 15000);
+    return () => window.clearInterval(id);
+  }, [appUid, appTimezone]);
+
+  useEffect(() => {
+    if (!appUid || !shiftDay) return;
+    const uid = appUid;
+    const timezone = appTimezone;
+    const userRef = doc(db, "users", uid);
+    let templates: ShiftTemplate[] = [];
+    let exceptions: ShiftException[] = [];
+    let templatesReady = false;
+    let exceptionsReady = false;
+    let cancelled = false;
+
+    const sync = async () => {
+      if (cancelled || !templatesReady || !exceptionsReady) return;
+      const zoned = zonedParts(new Date(), timezone);
+      if (zoned.date !== shiftDay) return;
+      const scheduled = isDuringShift(zoned.time, resolveDay(zoned.date, templates, exceptions), uid);
+      scheduledRef.current = scheduled;
+      scheduleReadyRef.current = true;
+      try {
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(userRef);
+          if (!snap.exists()) return;
+          const onShift = snap.get("onShift") === true;
+          const shiftHold = snap.get("shiftHold") === true;
+          const plan = planShiftSync({ onShift, shiftHold, scheduled });
+          if (!plan.write) return;
+          const patch: { onShift?: boolean; shiftHold?: boolean } = {};
+          if (plan.onShift !== onShift) patch.onShift = plan.onShift;
+          if (plan.shiftHold !== shiftHold) patch.shiftHold = plan.shiftHold;
+          if (Object.keys(patch).length === 0) return;
+          tx.update(userRef, patch);
+        });
+      } catch {
+        // The next tick retries. A manual tap uses its own transaction.
+      }
+    };
+
+    const unsubUser = onSnapshot(userRef, (snap) => {
+      const onShift = snap.get("onShift") === true;
+      setGate((current) =>
+        current.kind === "app" && current.session.uid === uid && current.session.onShift !== onShift
+          ? { kind: "app", session: { ...current.session, onShift } }
+          : current,
+      );
+    });
+    const unsubTemplates = onSnapshot(collection(db, "shiftTemplates"), (snap) => {
+      templates = snap.docs.map((item) => templateFromData(item.id, item.data() as Record<string, unknown>));
+      templatesReady = true;
+      void sync();
+    });
+    const unsubExceptions = onSnapshot(
+      query(collection(db, "shiftExceptions"), where("date", "==", shiftDay)),
+      (snap) => {
+        exceptions = snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+        exceptionsReady = true;
+        void sync();
+      },
+    );
+    const id = window.setInterval(() => void sync(), 15000);
+    return () => {
+      cancelled = true;
+      scheduleReadyRef.current = false;
+      window.clearInterval(id);
+      unsubUser();
+      unsubTemplates();
+      unsubExceptions();
+    };
+  }, [appUid, appTimezone, shiftDay]);
+
+  const toggleShift = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user || gate.kind !== "app" || shiftBusy) return;
+    const previous = gate.session.onShift;
+    const next = !previous;
+    setShiftBusy(true);
+    setShiftError("");
+    setGate((current) =>
+      current.kind === "app" ? { kind: "app", session: { ...current.session, onShift: next } } : current,
+    );
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const scheduled = scheduledRef.current;
+      const known = scheduleReadyRef.current;
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(userRef);
+        const desired = snap.get("onShift") !== true;
+        const shiftHold = known ? desired !== scheduled : true;
+        tx.update(userRef, { onShift: desired, shiftHold });
+      });
+    } catch (error) {
+      setShiftError(errorText(error));
+      setGate((current) =>
+        current.kind === "app" ? { kind: "app", session: { ...current.session, onShift: previous } } : current,
+      );
+    } finally {
+      setShiftBusy(false);
+    }
+  }, [gate, shiftBusy]);
 
   function go(patch: Partial<RouteState>) {
     const next: RouteState = {
@@ -268,10 +379,17 @@ export function App() {
       <header className="top">
         <strong className="brand">HammondCare</strong>
         {gate.kind === "app" ? (
-          <span>
-            {nameMark(gate.session.displayName, gate.session.emoji)}{" "}
-            {gate.session.onShift ? "On shift" : "Off shift"}
-          </span>
+          <button
+            type="button"
+            className={gate.session.onShift ? "shift-status on" : "shift-status off"}
+            data-testid="shift-status"
+            data-on={gate.session.onShift ? "true" : "false"}
+            aria-pressed={gate.session.onShift}
+            disabled={shiftBusy}
+            onClick={() => void toggleShift()}
+          >
+            {nameMark(gate.session.displayName, gate.session.emoji)} {gate.session.onShift ? "On shift" : "Off shift"}
+          </button>
         ) : null}
       </header>
       <main className="main">
@@ -298,6 +416,7 @@ export function App() {
         ) : null}
         {gate.kind === "app" && sessionValue ? (
           <SessionProvider value={sessionValue}>
+            {shiftError ? <Notice>{shiftError}</Notice> : null}
             {route.view !== "home" && route.view !== "calendar" && route.view !== "messages" && route.view !== "more" ? (
               <button type="button" onClick={() => go({ view: "more", guide: null, thread: null, med: null, time: null })}>
                 Back

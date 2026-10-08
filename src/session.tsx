@@ -2,7 +2,6 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Session } from "./types";
 
 export type SessionValue = Session & {
-  setOnShift: (onShift: boolean) => Promise<void>;
   setEmoji: (emoji: string) => Promise<void>;
   setColorScheme: (colorScheme: string) => Promise<void>;
   onDenied: () => void;

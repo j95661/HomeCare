@@ -139,6 +139,49 @@ for (const { name, api } of apis) {
       expect(api.isOpenTemplate({ effectiveUntil: "2026-10-08" }, "2026-10-08")).toBe(false);
     });
 
+    it("is on shift only inside that person's working hours", () => {
+      const working = api.resolveDay("2026-10-07", [template()], []);
+      const swapped = api.resolveDay("2026-10-07", [template()], [exception()]);
+      const off = api.resolveDay("2026-10-14", [template()], [
+        exception({ id: "off", date: "2026-10-14", kind: "day_off", userId: "alex", userName: "Alex" }),
+      ]);
+      expect(api.isDuringShift("07:59", working, "alex")).toBe(false);
+      expect(api.isDuringShift("08:00", working, "alex")).toBe(true);
+      expect(api.isDuringShift("15:59", working, "alex")).toBe(true);
+      expect(api.isDuringShift("16:00", working, "alex")).toBe(false);
+      expect(api.isDuringShift("10:00", swapped, "sam")).toBe(true);
+      expect(api.isDuringShift("10:00", swapped, "alex")).toBe(false);
+      expect(api.isDuringShift("10:00", off, "alex")).toBe(false);
+    });
+
+    it("holds a manual shift until the schedule matches it", () => {
+      expect(api.planShiftSync({ onShift: false, shiftHold: false, scheduled: true })).toEqual({
+        onShift: true,
+        shiftHold: false,
+        write: true,
+      });
+      expect(api.planShiftSync({ onShift: true, shiftHold: false, scheduled: true })).toEqual({
+        onShift: true,
+        shiftHold: false,
+        write: false,
+      });
+      expect(api.planShiftSync({ onShift: false, shiftHold: true, scheduled: true })).toEqual({
+        onShift: false,
+        shiftHold: true,
+        write: false,
+      });
+      expect(api.planShiftSync({ onShift: false, shiftHold: true, scheduled: false })).toEqual({
+        onShift: false,
+        shiftHold: false,
+        write: true,
+      });
+      expect(api.planShiftSync({ onShift: true, shiftHold: true, scheduled: true })).toEqual({
+        onShift: true,
+        shiftHold: false,
+        write: true,
+      });
+    });
+
     it("matches the other implementation on the same inputs", () => {
       const templates = [template(), template({ id: "split", start: "16:00", end: "20:00", userName: "Sam", userId: "sam" })];
       const exceptions = [exception()];
