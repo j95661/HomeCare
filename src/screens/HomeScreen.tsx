@@ -21,6 +21,7 @@ import { db } from "../firebase";
 import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
+import { homeMedicationFocus } from "../homeMed";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
 
@@ -57,11 +58,19 @@ export function HomeScreen({ route, go }: Props) {
   const [prompt, setPrompt] = useState<{ id: string; time: string } | null>(
     route.med && route.time ? { id: route.med, time: route.time } : null,
   );
+  const [clock, setClock] = useState(() => zonedParts(new Date(), session.timezone).time);
   const day = todayISO(session.timezone);
 
   useEffect(() => {
     if (route.med && route.time) setPrompt({ id: route.med, time: route.time });
   }, [route.med, route.time]);
+
+  useEffect(() => {
+    const tick = () => setClock(zonedParts(new Date(), session.timezone).time);
+    tick();
+    const id = window.setInterval(tick, 15000);
+    return () => window.clearInterval(id);
+  }, [session.timezone]);
 
   useEffect(() => {
     const unsubs = [
@@ -236,6 +245,7 @@ export function HomeScreen({ route, go }: Props) {
   }
 
   const promptMed = meds.find((med) => med.id === prompt?.id);
+  const medFocus = homeMedicationFocus(meds, logs, clock);
   const shifts = resolveDay(day, templates, exceptions);
   const myShifts = shifts.filter((shift) => shift.userId === session.uid && shift.kind !== "day_off");
   const todoPeriods = periodsForShifts(myShifts);
@@ -338,35 +348,24 @@ export function HomeScreen({ route, go }: Props) {
         </ul>
       </section>
 
-      <section className="panel">
-        <h2>Today's medications</h2>
+      <section className="panel" data-testid="medications">
+        <h2>Medications</h2>
         {!session.onShift ? <p className="hint">Tap the shift status in the corner to respond and hear reminders.</p> : null}
         {meds.length === 0 ? <Empty>No medications yet.</Empty> : null}
+        {meds.length > 0 && medFocus.length === 0 ? <Empty>Nothing else today.</Empty> : null}
         <ul className="list">
-          {meds
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((med) => (
-              <li key={med.id} className="card">
-                <strong>{med.name}</strong>
-                <p>
-                  {[med.dose, med.frequency].filter(Boolean).join(" · ")}
-                </p>
-                {med.careNotes ? <p>{med.careNotes}</p> : null}
-                <div className="times">
-                  {med.times.map((time) => (
-                    <button
-                      key={time}
-                      type="button"
-                      disabled={!session.onShift}
-                      onClick={() => setPrompt({ id: med.id, time })}
-                    >
-                      {formatClock(time)}
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
+          {medFocus.map((item) => (
+            <li key={`${item.id}:${item.time}`} className="card" data-testid="home-med" data-status={item.status}>
+              <p className="meta">{item.status === "due" ? "Due" : "Up next"}</p>
+              <button
+                type="button"
+                disabled={!session.onShift}
+                onClick={() => setPrompt({ id: item.id, time: item.time })}
+              >
+                {item.name}
+              </button>
+            </li>
+          ))}
         </ul>
       </section>
 
