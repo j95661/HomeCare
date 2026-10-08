@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Pictures on handover notes and messages stay behind the same audience
+// as the note or thread. Token download URLs are not used.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function userDoc() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function userData() {
+      return firestore.get(userDoc()).data;
+    }
+
+    function passwordWindowOk() {
+      return userData().signIn == 'google'
+        || userData().signIn == 'email_otp'
+        || userData().passwordExpiresAt > request.time;
+    }
+
+    function isActiveUser() {
+      return request.auth != null
+        && firestore.exists(userDoc())
+        && userData().active == true
+        && userData().otpVerified == true
+        && passwordWindowOk();
+    }
+
+    function isCareStaff() {
+      return isActiveUser() && (userData().role == 'team_lead' || userData().role == 'care_provider');
+    }
+
+    function isAllowedImage() {
+      return request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|gif|webp|heic|heif)');
+    }
+
+    function threadDoc(threadId) {
+      return /databases/(default)/documents/threads/$(threadId);
+    }
+
+    function canReadDirectImage(threadId) {
+      return isActiveUser()
+        && threadId.matches('^direct_[A-Za-z0-9]+_[A-Za-z0-9]+$')
+        && firestore.exists(threadDoc(threadId))
+        && firestore.get(threadDoc(threadId)).data.type == 'direct'
+        && (
+          userData().role == 'super_admin'
+          || userData().role == 'admin'
+          || request.auth.uid in firestore.get(threadDoc(threadId)).data.participantIds
+        );
+    }
+
+    match /handover/{uid}/{fileName} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && uid == request.auth.uid && isAllowedImage();
+      allow update, delete: if false;
+    }
+
+    match /messages/group/{uid}/{fileName} {
+      allow read: if isActiveUser();
+      allow create: if isCareStaff() && uid == request.auth.uid && isAllowedImage();
+      allow update, delete: if false;
+    }
+
+    match /messages/{threadId}/{uid}/{fileName} {
+      allow read: if canReadDirectImage(threadId);
+      allow create: if canReadDirectImage(threadId)
+        && uid == request.auth.uid
+        && request.auth.uid in firestore.get(threadDoc(threadId)).data.participantIds
+        && isAllowedImage();
+      allow update, delete: if false;
+    }
+  }
+}

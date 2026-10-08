@@ -10,6 +10,7 @@ import {
   where,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
+import { CareImage, PictureButton, PictureControls, careImagePath, uploadCareImage, usePictureDraft } from "../careImage";
 import { useEmojiMap, withEmoji } from "../emoji";
 import { beep } from "../audio";
 import { Empty, Field, Modal, Notice } from "../components";
@@ -35,6 +36,7 @@ export function HomeScreen({ route, go }: Props) {
   const [guides, setGuides] = useState<Guide[]>([]);
   const [logs, setLogs] = useState<MedLog[]>([]);
   const [body, setBody] = useState("");
+  const picture = usePictureDraft();
   const [noteText, setNoteText] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -115,17 +117,30 @@ export function HomeScreen({ route, go }: Props) {
 
   async function postNote() {
     const text = body.trim();
-    if (!text) return;
+    if (!text && !picture.file) return;
     setBusy(true);
     setError("");
     try {
-      await addDoc(collection(db, "handoverNotes"), {
+      const note: {
+        body: string;
+        authorId: string;
+        authorName: string;
+        createdAt: ReturnType<typeof serverTimestamp>;
+        imagePath?: string;
+      } = {
         body: text,
         authorId: session.uid,
         authorName: session.displayName,
         createdAt: serverTimestamp(),
-      });
+      };
+      if (picture.file) {
+        const path = careImagePath(`handover/${session.uid}`, picture.file);
+        await uploadCareImage(path, picture.file);
+        note.imagePath = path;
+      }
+      await addDoc(collection(db, "handoverNotes"), note);
       setBody("");
+      picture.clear();
     } catch (err) {
       if (isPermissionDenied(err)) session.onDenied();
       else setError(errorText(err));
@@ -165,26 +180,46 @@ export function HomeScreen({ route, go }: Props) {
 
   return (
     <div className="stack">
-      <section className="panel">
+      <section className="panel attach">
         <h2>Handover notes</h2>
         <Field label="What happened this shift?">
           <textarea
             data-testid="handover-body"
             value={body}
             onChange={(event) => setBody(event.target.value)}
+            onPaste={picture.onPaste}
             rows={3}
             maxLength={4000}
+            autoCorrect="on"
+            autoCapitalize="sentences"
           />
         </Field>
-        <button type="button" className="primary" data-testid="handover-submit" disabled={busy} onClick={() => void postNote()}>
-          Post note
-        </button>
+        <PictureControls
+          testId="handover-picture"
+          inputRef={picture.inputRef}
+          preview={picture.preview}
+          onChoose={picture.choose}
+          onClear={picture.clear}
+        />
+        <div className="send-row note-row">
+          <PictureButton testId="handover-picture" onOpen={() => picture.inputRef.current?.click()} />
+          <button
+            type="button"
+            className="primary"
+            data-testid="handover-submit"
+            disabled={busy || (!body.trim() && !picture.file)}
+            onClick={() => void postNote()}
+          >
+            Post note
+          </button>
+        </div>
         {notes.length === 0 ? <Empty>No notes yet.</Empty> : null}
         <ul className="list">
           {notes.map((note, index) => (
             <li key={note.id} className={index === 0 ? "card pinned" : "card"}>
               {index === 0 ? <span className="badge">Pinned</span> : null}
-              <p>{note.body}</p>
+              {note.body ? <p className="message-body">{note.body}</p> : null}
+              {note.imagePath ? <CareImage path={note.imagePath} /> : null}
               <p className="meta">
                 {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
               </p>
@@ -269,6 +304,7 @@ export function HomeScreen({ route, go }: Props) {
         </ul>
       </section>
 
+      {picture.error ? <Notice>{picture.error}</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
 
       {prompt && promptMed ? (

@@ -192,6 +192,27 @@ describe("notes, guides, and threads", () => {
     );
     await assertFails(setDoc(doc(dbFor("pat"), "handoverNotes/blank"), { ...note, body: "" }));
     await assertFails(deleteDoc(doc(dbFor("lead"), "handoverNotes/n1")));
+    await assertSucceeds(
+      setDoc(doc(dbFor("pat"), "handoverNotes/pic"), {
+        ...note,
+        body: "",
+        imagePath: "handover/pat/photo.png",
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(dbFor("pat"), "handoverNotes/caption"), {
+        ...note,
+        body: "Evening 🌸",
+        imagePath: "handover/pat/evening.gif",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(dbFor("pat"), "handoverNotes/spoof-pic"), {
+        ...note,
+        body: "",
+        imagePath: "handover/sam/photo.png",
+      }),
+    );
   });
 
   it("lets a team lead assign a guide to part of the day and keeps removal with an admin", async () => {
@@ -233,6 +254,20 @@ describe("notes, guides, and threads", () => {
     await assertSucceeds(
       addDoc(collection(dbFor("pat"), "groupThread/main/messages"), { ...message, text: "Quiet morning 🌸" }),
     );
+    await assertSucceeds(
+      addDoc(collection(dbFor("pat"), "groupThread/main/messages"), {
+        ...message,
+        text: "",
+        imagePath: "messages/group/pat/meme.gif",
+      }),
+    );
+    await assertFails(
+      addDoc(collection(dbFor("pat"), "groupThread/main/messages"), {
+        ...message,
+        text: "",
+        imagePath: "messages/group/sam/meme.gif",
+      }),
+    );
     await assertFails(updateDoc(created, { text: "Edited" }));
     await assertFails(deleteDoc(created));
   });
@@ -263,6 +298,24 @@ describe("notes, guides, and threads", () => {
         senderId: "sam",
         senderName: "Sam",
         text: "I can cover it",
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      addDoc(collection(dbFor("sam"), "threads/direct_pat_sam/messages"), {
+        senderId: "sam",
+        senderName: "Sam",
+        text: "Look",
+        imagePath: "messages/direct_pat_sam/sam/pic.png",
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      addDoc(collection(dbFor("sam"), "threads/direct_pat_sam/messages"), {
+        senderId: "sam",
+        senderName: "Sam",
+        text: "",
+        imagePath: "messages/direct_other/sam/pic.png",
         createdAt: serverTimestamp(),
       }),
     );

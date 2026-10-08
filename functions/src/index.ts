@@ -45,6 +45,7 @@ import {
 } from "./logic/schedule";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { zonedParts } from "./logic/time";
+import { messagePreview } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
 
@@ -1153,11 +1154,13 @@ async function notifyMessage(
   senderId: string,
   senderName: string,
   text: string,
+  hasImage: boolean,
   threadId: string,
   directParticipantIds?: string[],
 ): Promise<void> {
   const users = await loadActiveUsers();
-  const preview = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  const shown = messagePreview(text, hasImage);
+  const preview = shown.length > 120 ? `${shown.slice(0, 117)}...` : shown;
   const recipients = directParticipantIds
     ? directRecipients(users, senderId, directParticipantIds)
     : careTeamRecipients(users, senderId).map((user) => user.uid);
@@ -1174,7 +1177,13 @@ async function notifyMessage(
 export const onGroupMessage = onDocumentCreated("groupThread/{docId}/messages/{messageId}", async (event) => {
   if (event.params.docId !== "main" || !event.data) return;
   const data = event.data.data();
-  await notifyMessage(String(data.senderId || ""), String(data.senderName || ""), String(data.text || ""), "group");
+  await notifyMessage(
+    String(data.senderId || ""),
+    String(data.senderName || ""),
+    String(data.text || ""),
+    typeof data.imagePath === "string" && data.imagePath.length > 0,
+    "group",
+  );
 });
 
 export const deleteMessage = onCall(callable, async (request) => {
@@ -1215,8 +1224,9 @@ export const deleteMessage = onCall(callable, async (request) => {
     });
   } else {
     const latest = remaining.docs[0];
+    const latestPath = latest.get("imagePath");
     await parentRef.update({
-      lastMessageText: String(latest.get("text") || "").slice(0, 140),
+      lastMessageText: messagePreview(String(latest.get("text") || ""), typeof latestPath === "string" && latestPath.length > 0),
       lastSenderId: String(latest.get("senderId") || ""),
       lastSenderName: String(latest.get("senderName") || ""),
       lastMessageAt: latest.get("createdAt") || FieldValue.serverTimestamp(),
@@ -1234,6 +1244,7 @@ export const onDirectMessage = onDocumentCreated("threads/{threadId}/messages/{m
     String(data.senderId || ""),
     String(data.senderName || ""),
     String(data.text || ""),
+    typeof data.imagePath === "string" && data.imagePath.length > 0,
     event.params.threadId,
     participantIds,
   );

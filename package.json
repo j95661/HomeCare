@@ -8,9 +8,9 @@
     "build": "npm --prefix functions run build && node scripts/write-sw.mjs production && tsc -p tsconfig.json --noEmit && vite build",
     "build:emulator": "npm --prefix functions run build && node scripts/write-sw.mjs development && tsc -p tsconfig.json --noEmit && vite build --mode development",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "test": "vitest run && firebase emulators:exec --only firestore --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
+    "test": "vitest run && firebase emulators:exec --only firestore,storage --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
     "test:logic": "vitest run",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
     "bootstrap": "node scripts/bootstrap.mjs",
     "icons": "python3 scripts/make-icons.py"
   },

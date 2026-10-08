@@ -12,7 +12,9 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
+import { CareImage, PictureButton, PictureControls, careImagePath, uploadCareImage, usePictureDraft } from "../careImage";
 import { EMOJI_CHOICES, withEmoji } from "../emoji";
+import { messagePreview } from "../media";
 import { insertText } from "../messageText";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
@@ -37,13 +39,14 @@ export function MessagesScreen({ thread, go }: Props) {
   const [groupPreview, setGroupPreview] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const picture = usePictureDraft();
   const [error, setError] = useState("");
   const [picking, setPicking] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const careStaff = isCareStaff(session.role);
   const admin = session.role === "super_admin" || session.role === "admin";
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const cursor = useRef({ start: 0, end: 0 });
 
   useEffect(() => {
@@ -154,42 +157,53 @@ export function MessagesScreen({ thread, go }: Props) {
 
   async function send() {
     const value = text.trim();
-    if (!value || !thread) return;
-    const batch = writeBatch(db);
-    if (thread === "group") {
-      const ref = doc(collection(db, "groupThread/main/messages"));
-      batch.set(ref, {
-        senderId: session.uid,
-        senderName: session.displayName,
-        text: value,
-        createdAt: serverTimestamp(),
-      });
-      batch.update(doc(db, "groupThread/main"), {
-        lastMessageText: value.slice(0, 140),
-        lastMessageAt: serverTimestamp(),
-        lastSenderId: session.uid,
-        lastSenderName: session.displayName,
-      });
-    } else {
-      const ref = doc(collection(db, `threads/${thread}/messages`));
-      batch.set(ref, {
-        senderId: session.uid,
-        senderName: session.displayName,
-        text: value,
-        createdAt: serverTimestamp(),
-      });
-      batch.update(doc(db, "threads", thread), {
-        lastMessageText: value.slice(0, 140),
-        lastMessageAt: serverTimestamp(),
-        lastSenderId: session.uid,
-        lastSenderName: session.displayName,
-      });
-    }
+    if ((!value && !picture.file) || !thread || busy) return;
+    setBusy(true);
+    setError("");
     try {
+      const payload: {
+        senderId: string;
+        senderName: string;
+        text: string;
+        createdAt: ReturnType<typeof serverTimestamp>;
+        imagePath?: string;
+      } = {
+        senderId: session.uid,
+        senderName: session.displayName,
+        text: value,
+        createdAt: serverTimestamp(),
+      };
+      if (picture.file) {
+        const folder = thread === "group" ? `messages/group/${session.uid}` : `messages/${thread}/${session.uid}`;
+        payload.imagePath = careImagePath(folder, picture.file);
+        await uploadCareImage(payload.imagePath, picture.file);
+      }
+      const preview = messagePreview(value, Boolean(payload.imagePath));
+      const batch = writeBatch(db);
+      if (thread === "group") {
+        batch.set(doc(collection(db, "groupThread/main/messages")), payload);
+        batch.update(doc(db, "groupThread/main"), {
+          lastMessageText: preview,
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: session.uid,
+          lastSenderName: session.displayName,
+        });
+      } else {
+        batch.set(doc(collection(db, `threads/${thread}/messages`)), payload);
+        batch.update(doc(db, "threads", thread), {
+          lastMessageText: preview,
+          lastMessageAt: serverTimestamp(),
+          lastSenderId: session.uid,
+          lastSenderName: session.displayName,
+        });
+      }
       await batch.commit();
       setText("");
+      picture.clear();
     } catch (err) {
       setError(errorText(err));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -258,7 +272,8 @@ export function MessagesScreen({ thread, go }: Props) {
         {messages.map((message) => (
           <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"} data-testid="message-card">
             <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
-            <p className="message-body">{message.text}</p>
+            {message.text ? <p className="message-body">{message.text}</p> : null}
+            {message.imagePath ? <CareImage path={message.imagePath} /> : null}
             <p className="meta">{formatStamp(message.createdAt)}</p>
             {canDeleteMessage(session.role, session.uid, message.senderId) ? (
               <button type="button" data-testid="delete-message" disabled={busy} onClick={() => void removeMessage(message.id)}>
@@ -281,13 +296,16 @@ export function MessagesScreen({ thread, go }: Props) {
       >
         <label className="field">
           <span>Message</span>
-          <input
+          <textarea
             ref={inputRef}
             data-testid="message-input"
             value={text}
             maxLength={2000}
-            enterKeyHint="send"
+            rows={3}
             autoComplete="off"
+            autoCorrect="on"
+            autoCapitalize="sentences"
+            onPaste={picture.onPaste}
             onChange={(event) => {
               setText(event.target.value);
               cursor.current = {
@@ -317,7 +335,14 @@ export function MessagesScreen({ thread, go }: Props) {
             ))}
           </div>
         ) : null}
-        <div className="send-row">
+        <PictureControls
+          testId="message-picture"
+          inputRef={picture.inputRef}
+          preview={picture.preview}
+          onChoose={picture.choose}
+          onClear={picture.clear}
+        />
+        <div className="send-row with-picture">
           <button
             type="button"
             className="emoji-toggle"
@@ -328,12 +353,14 @@ export function MessagesScreen({ thread, go }: Props) {
           >
             🌸
           </button>
-          <button type="submit" className="primary" data-testid="message-send">
+          <PictureButton testId="message-picture" onOpen={() => picture.inputRef.current?.click()} />
+          <button type="submit" className="primary" data-testid="message-send" disabled={busy || (!text.trim() && !picture.file)}>
             Send
           </button>
         </div>
       </form>
       ) : null}
+      {picture.error ? <Notice>{picture.error}</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );
