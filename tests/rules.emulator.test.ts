@@ -190,11 +190,11 @@ describe("security rules", () => {
     await assertFails(updateDoc(doc(dbFor("pat"), "users/sam"), { onShift: true }));
   });
 
-  it("lets admins edit medications and guides, and blocks care providers and team leads", async () => {
+  it("lets admins and team leads edit medications, and blocks care providers", async () => {
     await assertSucceeds(setDoc(doc(dbFor("admin"), "medications/vit"), medication("admin")));
     await assertSucceeds(setDoc(doc(dbFor("super"), "medications/other"), medication("super")));
+    await assertSucceeds(setDoc(doc(dbFor("lead"), "medications/lead-med"), medication("lead")));
     await assertFails(setDoc(doc(dbFor("pat"), "medications/nope"), medication("pat")));
-    await assertFails(setDoc(doc(dbFor("lead"), "medications/nope"), medication("lead")));
     await assertSucceeds(getDoc(doc(dbFor("pat"), "medications/vit")));
     const guide = {
       title: "Shower",

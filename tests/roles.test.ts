@@ -30,6 +30,7 @@ import {
   canDeleteActivities,
   canManageGuides,
   canManageMeds,
+  canEditMedications,
   canEditWeeklyPattern,
   canManageSchedule,
   canReviewLogs,
@@ -79,6 +80,7 @@ describe("role capabilities", () => {
 
   it("gives medication edits to admins, guide and schedule edits to team leads, and settings to the super admin", () => {
     expect(roles.filter(canManageMeds)).toEqual(["super_admin", "admin"]);
+    expect(roles.filter(canEditMedications)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canManageGuides)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canManageSchedule)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(roles.filter(canEditWeeklyPattern)).toEqual(["super_admin", "admin"]);
