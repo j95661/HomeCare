@@ -38,6 +38,7 @@ import {
 import {
   coverageKind,
   exceptionFromData,
+  isAwayKind,
   isDuringShift,
   planCoverageWrite,
   planDirectSwap,
@@ -48,7 +49,7 @@ import {
   templateApplies,
   templateFromData,
 } from "./logic/schedule";
-import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
+import { applyAcceptance, assertCoverageApproval, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { handoverNoteDay, shouldArchiveHandover } from "./logic/handover";
 import { zonedParts } from "./logic/time";
 import { coverageMessageText, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
@@ -1245,6 +1246,11 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
     .where("date", "==", current.shiftDate)
     .get();
   const exceptions = exceptionSnap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+  try {
+    assertCoverageApproval(current.type, canManageSchedule(caller.role));
+  } catch (error) {
+    throw new HttpsError("permission-denied", error instanceof Error ? error.message : "Could not approve.");
+  }
   const resolved = resolveDay(current.shiftDate, [template], exceptions).find((shift) => shift.templateId === current.templateId);
   if (!resolved) throw new HttpsError("not-found", "That shift was not found.");
   const shift: ShiftRecord = {
@@ -1289,10 +1295,14 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
       throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not accept.");
     }
     const kind = coverageKind(freshRequest.get("type")) || "swap";
+    const assigneeId = isAwayKind(kind) ? current.requesterId : caller.uid;
+    const assigneeName = isAwayKind(kind)
+      ? freshResolved.userName || String(freshRequest.get("requesterName") ?? "")
+      : caller.displayName;
     if (write === "update" && existing) {
       tx.update(existing.ref, {
-        userId: caller.uid,
-        userName: caller.displayName,
+        userId: assigneeId,
+        userName: assigneeName,
         kind,
         requestId: id,
         updatedAt: FieldValue.serverTimestamp(),
@@ -1302,8 +1312,8 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
         date: current.shiftDate,
         templateId: current.templateId,
         kind,
-        userId: caller.uid,
-        userName: caller.displayName,
+        userId: assigneeId,
+        userName: assigneeName,
         start: fresh.start,
         end: fresh.end,
         requestId: id,

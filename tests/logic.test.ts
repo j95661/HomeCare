@@ -201,7 +201,10 @@ describe("reminders and push", () => {
     ).toBe("Requested sick leave for Wed, Oct 14, 8:00 AM–4:00 PM.");
     expect(
       coverageMessageText({ action: "accepted", type: "day_off", date: "2026-10-14", start: "08:00", end: "16:00" }),
-    ).toBe("Took the time off for Wed, Oct 14, 8:00 AM–4:00 PM.");
+    ).toBe("Approved the time off for Wed, Oct 14, 8:00 AM–4:00 PM.");
+    expect(
+      coverageMessageText({ action: "accepted", type: "sick_leave", date: "2026-10-14", start: "08:00", end: "16:00" }),
+    ).toBe("Approved the sick leave for Wed, Oct 14, 8:00 AM–4:00 PM.");
   });
 
   it("builds an audible visible push, with the medication prompt kept on screen", () => {
@@ -237,7 +240,20 @@ describe("reminders and push", () => {
 });
 
 describe("shift acceptance", () => {
-  it("moves the shift to the person who accepts and keeps history", () => {
+  it("moves a swap to the person who accepts and keeps time off with the requester", () => {
+    const swap = applyAcceptance(
+      { userId: "pat", userName: "Pat", date: "2026-10-08", start: "08:00", end: "16:00" },
+      {
+        type: "swap",
+        shiftId: "s1",
+        requesterId: "pat",
+        status: "pending",
+        history: [{ action: "requested", uid: "pat", name: "Pat", at: "2026-10-07T12:00:00Z" }],
+      },
+      { uid: "sam", name: "Sam" },
+      "2026-10-07T13:00:00Z",
+    );
+    expect(swap.shift.userId).toBe("sam");
     const next = applyAcceptance(
       { userId: "pat", userName: "Pat", date: "2026-10-08", start: "08:00", end: "16:00" },
       {
@@ -247,12 +263,12 @@ describe("shift acceptance", () => {
         status: "pending",
         history: [{ action: "requested", uid: "pat", name: "Pat", at: "2026-10-07T12:00:00Z" }],
       },
-      { uid: "sam", name: "Sam" },
+      { uid: "lead", name: "Lead" },
       "2026-10-07T13:00:00Z",
     );
-    expect(next.shift.userId).toBe("sam");
+    expect(next.shift.userId).toBe("pat");
     expect(next.request.status).toBe("accepted");
-    expect(next.request.history.map((entry) => entry.action)).toEqual(["requested", "accepted"]);
+    expect(next.request.history.map((entry) => entry.action)).toEqual(["requested", "approved"]);
     expect(() =>
       applyAcceptance(
         next.shift,
