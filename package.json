@@ -1,0 +1,33 @@
+{
+  "name": "homecare",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/write-sw.mjs development && vite",
+    "build": "npm --prefix functions run build && node scripts/write-sw.mjs production && tsc -p tsconfig.json --noEmit && vite build",
+    "build:emulator": "npm --prefix functions run build && node scripts/write-sw.mjs development && tsc -p tsconfig.json --noEmit && vite build --mode development",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest run && firebase emulators:exec --only firestore --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
+    "test:logic": "vitest run",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-family-care \"vitest run --config vitest.rules.config.ts\"",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "icons": "python3 scripts/make-icons.py"
+  },
+  "dependencies": {
+    "firebase": "^11.9.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "firebase-admin": "^13.4.0",
+    "firebase-tools": "^14.11.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  }
+}
