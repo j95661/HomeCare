@@ -2,6 +2,8 @@ rules_version = '2';
 
 // Pictures on handover notes and messages stay behind the same audience
 // as the note or thread. Token download URLs are not used.
+// The browser reads them with getBlob, so the bucket also needs storage.cors.json.
+// Rules still require a signed-in account; the CORS list only lets that browser see the bytes.
 
 service firebase.storage {
   match /b/{bucket}/o {
