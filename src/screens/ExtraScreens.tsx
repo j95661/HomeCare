@@ -371,6 +371,7 @@ export function PeopleScreen() {
   const [role, setRole] = useState<Role>("care_provider");
   const [enableNow, setEnableNow] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -416,6 +417,7 @@ export function PeopleScreen() {
       setEnableNow(false);
       if (result.emailError && result.enabled) setNotice(result.emailError);
       else if (result.emailError) setError(result.emailError);
+      else setAdding(false);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -504,7 +506,13 @@ export function PeopleScreen() {
       <h2>People</h2>
       {manageAccounts ? null : <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>}
       {manageAccounts ? (
-      <section className="panel">
+      <CollapseSection
+        title="Add person"
+        summary=""
+        testId="add-person-toggle"
+        open={adding}
+        onToggle={() => setAdding((open) => !open)}
+      >
         <Field label="Name">
           <input data-testid="people-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
         </Field>
@@ -556,7 +564,7 @@ export function PeopleScreen() {
         <button type="button" className="primary" data-testid="people-create" disabled={busy} onClick={() => void createAccount()}>
           Add person
         </button>
-      </section>
+      </CollapseSection>
       ) : null}
       {manageAccounts && invites.some((invite) => !invite.rosterUid) ? (
         <ul className="list">
