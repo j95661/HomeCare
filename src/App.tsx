@@ -848,6 +848,7 @@ function LoginScreen({ notice }: { notice?: string }) {
   const [code, setCode] = useState("");
   const [devCode, setDevCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [adminCode, setAdminCode] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -873,9 +874,17 @@ function LoginScreen({ notice }: { notice?: string }) {
     try {
       const result = await call<{ sent: boolean; devCode?: string }>("requestSignInCode", { email: email.trim() });
       setCodeSent(true);
+      setAdminCode(false);
       setDevCode(result.devCode || "");
     } catch (err) {
-      setError(errorText(err));
+      const message = errorText(err);
+      if (message.includes("Ask an admin for a sign-in code") || message.includes("Wait a minute before requesting another code")) {
+        setCodeSent(true);
+        setAdminCode(true);
+        setError("");
+        return;
+      }
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -933,7 +942,9 @@ function LoginScreen({ notice }: { notice?: string }) {
           </Field>
           {codeSent ? (
             <>
-              <p className="hint">A 6-digit code was sent to {email.trim()}.</p>
+              <p className="hint">
+                {adminCode ? "Enter the 6-digit code." : `A 6-digit code was sent to ${email.trim()}.`}
+              </p>
               {devCode ? (
                 <p className="notice" data-testid="dev-otp">
                   Emulator code: {devCode}
@@ -953,7 +964,7 @@ function LoginScreen({ notice }: { notice?: string }) {
               Send a new code
             </button>
           ) : null}
-          <button type="button" onClick={() => { setPanel("choose"); setError(""); setCodeSent(false); }}>
+          <button type="button" onClick={() => { setPanel("choose"); setError(""); setCodeSent(false); setAdminCode(false); }}>
             Back
           </button>
         </form>
