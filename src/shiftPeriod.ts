@@ -1,3 +1,5 @@
+import { isAwayKind } from "./schedule";
+
 export const SHIFT_PERIODS = ["morning", "afternoon", "evening"] as const;
 
 export type ShiftPeriod = (typeof SHIFT_PERIODS)[number];
@@ -18,8 +20,8 @@ export function shiftCoversPeriod(start: string, end: string, period: ShiftPerio
   return start < window.end && end > window.start;
 }
 
-export function periodsForShifts(shifts: { start: string; end: string; kind: "" | "swap" | "day_off" }[]): ShiftPeriod[] {
+export function periodsForShifts(shifts: { start: string; end: string; kind: string }[]): ShiftPeriod[] {
   return SHIFT_PERIODS.filter((period) =>
-    shifts.some((shift) => shift.kind !== "day_off" && shiftCoversPeriod(shift.start, shift.end, period)),
+    shifts.some((shift) => !isAwayKind(shift.kind) && shiftCoversPeriod(shift.start, shift.end, period)),
   );
 }

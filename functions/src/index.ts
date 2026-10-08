@@ -35,6 +35,7 @@ import {
   type ReminderUser,
 } from "./logic/reminders";
 import {
+  coverageKind,
   exceptionFromData,
   isDuringShift,
   planCoverageWrite,
@@ -949,7 +950,7 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
   const body = asObject(request.data);
   const templateId = String(body.templateId ?? "");
   const date = String(body.date ?? "");
-  const type = body.type === "day_off" ? "day_off" : body.type === "swap" ? "swap" : "";
+  const type = coverageKind(body.type);
   if (!templateId || !isIsoDate(date) || !type) {
     throw new HttpsError("invalid-argument", "Choose a shift and a request type.");
   }
@@ -1005,7 +1006,7 @@ async function loadRequest(id: string): Promise<LoadedRequest> {
   if (!snap.exists) throw new HttpsError("not-found", "That request was not found.");
   const status = snap.get("status");
   return {
-    type: snap.get("type") === "day_off" ? "day_off" : "swap",
+    type: coverageKind(snap.get("type")) || "swap",
     shiftId: String(snap.get("shiftId") ?? ""),
     templateId: String(snap.get("templateId") ?? ""),
     shiftDate: String(snap.get("shiftDate") ?? ""),
@@ -1081,7 +1082,7 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
     } catch (error) {
       throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not accept.");
     }
-    const kind = freshRequest.get("type") === "day_off" ? "day_off" : "swap";
+    const kind = coverageKind(freshRequest.get("type")) || "swap";
     if (write === "update" && existing) {
       tx.update(existing.ref, {
         userId: caller.uid,

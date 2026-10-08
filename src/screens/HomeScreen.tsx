@@ -19,7 +19,7 @@ import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { VIEW_CHANGE } from "../viewAs";
 import { db } from "../firebase";
-import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
+import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { homeMedicationFocus } from "../homeMed";
@@ -257,7 +257,7 @@ export function HomeScreen({ route, go }: Props) {
   const promptMed = meds.find((med) => med.id === prompt?.id);
   const medFocus = homeMedicationFocus(meds, logs, clock);
   const shifts = resolveDay(day, templates, exceptions);
-  const myShifts = shifts.filter((shift) => shift.userId === session.uid && shift.kind !== "day_off");
+  const myShifts = shifts.filter((shift) => shift.userId === session.uid && !isAwayKind(shift.kind));
   const todoPeriods = periodsForShifts(myShifts);
   const todos = guides
     .filter((guide): guide is Guide & { period: ShiftPeriod } => guide.period !== "" && todoPeriods.includes(guide.period))

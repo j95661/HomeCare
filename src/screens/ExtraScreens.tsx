@@ -1110,7 +1110,8 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
-  const links: { view: RouteState["view"]; label: string; show: boolean }[] = [
+  const links: { view: RouteState["view"]; label: string; show: boolean; testId?: string }[] = [
+    { view: "coverage", label: "Swap / time off", show: true, testId: "more-coverage" },
     { view: "meds", label: "Medications", show: true },
     { view: "activities", label: "Activities", show: true },
     { view: "guides", label: "Guides", show: true },
@@ -1130,7 +1131,12 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
       {links
         .filter((link) => link.show)
         .map((link) => (
-          <button key={link.view} type="button" onClick={() => go({ view: link.view, thread: null, guide: null, med: null, time: null })}>
+          <button
+            key={link.view}
+            type="button"
+            data-testid={link.testId}
+            onClick={() => go({ view: link.view, thread: null, guide: null, med: null, time: null })}
+          >
             {link.label}
           </button>
         ))}

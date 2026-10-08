@@ -4,7 +4,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  limit,
   onSnapshot,
   orderBy,
   query,
@@ -12,7 +11,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { call, errorText, isPermissionDenied } from "../api";
+import { errorText, isPermissionDenied } from "../api";
 import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
@@ -27,15 +26,14 @@ import {
   repeatingShiftGroups,
   resolveRange,
   templateFromData,
-  visibleCoverageRequests,
   weekdayOf,
   type ResolvedShift,
   type ShiftException,
   type ShiftTemplate,
 } from "../schedule";
 import { useSession } from "../session";
-import { addDays, addMonths, formatClock, formatDay, formatIso, monthGrid, startOfWeek, todayISO } from "../time";
-import type { Person, ShiftRequest } from "../types";
+import { addDays, addMonths, formatClock, formatDay, monthGrid, startOfWeek, todayISO } from "../time";
+import type { Person } from "../types";
 
 function rosterName(person: Person): string {
   const name = withEmoji(person.displayName, person.emoji);
@@ -55,7 +53,6 @@ export function CalendarScreen() {
   const [anchor, setAnchor] = useState(() => todayISO(session.timezone));
   const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
   const [exceptions, setExceptions] = useState<ShiftException[]>([]);
-  const [requests, setRequests] = useState<ShiftRequest[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,11 +114,6 @@ export function CalendarScreen() {
           orderBy("date"),
         ),
         (snap) => setExceptions(snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
-      ),
-      onSnapshot(
-        query(collection(db, "shiftRequests"), orderBy("requestedAt", "desc"), limit(40)),
-        (snap) => setRequests(snap.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<ShiftRequest, "id">) }))),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
@@ -208,55 +200,6 @@ export function CalendarScreen() {
     }
   }
 
-  async function requestCoverage(templateId: string, date: string, type: "swap" | "day_off") {
-    setBusy(true);
-    setError("");
-    try {
-      await call("requestShiftCoverage", { templateId, date, type });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function accept(id: string) {
-    setBusy(true);
-    setError("");
-    try {
-      await call("acceptShiftRequest", { id });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function cancel(id: string) {
-    setBusy(true);
-    try {
-      await call("cancelShiftRequest", { id });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function makePattern(id: string) {
-    setBusy(true);
-    setError("");
-    try {
-      await call("makeWeeklyPattern", { id });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
-  const shownRequests = visibleCoverageRequests(requests);
   const weekStart = startOfWeek(!manage && board === "mine" ? today : anchor);
   const days =
     !manage || mode === "week"
@@ -286,26 +229,6 @@ export function CalendarScreen() {
           {formatClock(shift.start)} – {formatClock(shift.end)}
           {people.find((person) => person.id === shift.userId)?.onShift ? " · On shift now" : ""}
         </p>
-        {shift.userId === session.uid && shift.templateId ? (
-          <div className="split">
-            <button
-              type="button"
-              data-testid="request-swap"
-              disabled={busy || pendingIds.has(shift.id)}
-              onClick={() => void requestCoverage(shift.templateId, shift.date, "swap")}
-            >
-              Request swap
-            </button>
-            <button
-              type="button"
-              data-testid="request-day-off"
-              disabled={busy || pendingIds.has(shift.id)}
-              onClick={() => void requestCoverage(shift.templateId, shift.date, "day_off")}
-            >
-              Request day off
-            </button>
-          </div>
-        ) : null}
       </li>
     );
   }
@@ -369,7 +292,7 @@ export function CalendarScreen() {
       {showForm ? (
         <section className="panel">
           <h2>Weekly pattern</h2>
-          <p className="hint">This repeats every week. A swap or day off changes one date only.</p>
+          <p className="hint">This repeats every week. A swap, time off, or sick leave changes one date only.</p>
           <Field label="Person">
             <select data-testid="pattern-person" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.target.value })}>
               <option value="">Choose</option>
@@ -477,7 +400,7 @@ export function CalendarScreen() {
         <>
           <section className="panel" data-testid="my-repeating">
             <h2>Repeating shift</h2>
-            <p className="hint">This repeats every week. A swap or day off changes one date, and the team week shows it.</p>
+            <p className="hint">This repeats every week. A swap, time off, or sick leave changes one date, and the team week shows it.</p>
             {myTemplates.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
             <ul className="list">
               {myTemplates.map((template) => (
@@ -559,50 +482,6 @@ export function CalendarScreen() {
         days.map((date) => dayBlock(date, null))
       ) : null}
 
-      <section className="panel">
-        <h2>Coverage requests</h2>
-        {shownRequests.length === 0 ? <Empty>No requests yet.</Empty> : null}
-        <ul className="list">
-          {shownRequests.map((item) => (
-            <li key={item.id} className="card" data-testid="coverage-request" data-status={item.status} data-type={item.type}>
-              <strong>{item.type === "day_off" ? "Day off" : "Shift swap"}</strong>
-              <p>
-                {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} ·{" "}
-                {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
-              </p>
-              <p className="meta">
-                {item.status}
-                {item.acceptedByName
-                  ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
-                  : ""}
-              </p>
-              {manage && item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
-              <ul className="history">
-                {(item.history ?? []).map((entry, index) => (
-                  <li key={`${entry.at}-${index}`}>
-                    {entry.action} by {withEmoji(entry.name, people.find((person) => person.id === entry.uid)?.emoji)} · {formatIso(entry.at)}
-                  </li>
-                ))}
-              </ul>
-              {item.status === "pending" && item.requesterId !== session.uid ? (
-                <button type="button" className="primary" data-testid="accept-coverage" disabled={busy} onClick={() => void accept(item.id)}>
-                  Accept
-                </button>
-              ) : null}
-              {item.status === "pending" && item.requesterId === session.uid ? (
-                <button type="button" data-testid="cancel-coverage" disabled={busy} onClick={() => void cancel(item.id)}>
-                  Cancel request
-                </button>
-              ) : null}
-              {manage && item.type === "swap" && item.status === "accepted" && item.templateId && !item.patternUpdated ? (
-                <button type="button" className="primary" data-testid="make-weekly-pattern" disabled={busy} onClick={() => void makePattern(item.id)}>
-                  Make this the new weekly pattern
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </section>
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );

@@ -19,6 +19,7 @@ import { insertText } from "../messageText";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
 import { canDeleteMessage, canPostCareTeamNotice, canPostToCareTeam, isAccountEnabled } from "../roles";
+import { coverageRequestLabel } from "../schedule";
 import { useSession } from "../session";
 import { VIEW_CHANGE } from "../viewAs";
 import { formatStamp } from "../time";
@@ -314,7 +315,7 @@ export function MessagesScreen({ thread, go }: Props) {
           <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"} data-testid="message-card" data-kind={message.kind || ""}>
             {message.kind === "coverage" ? (
               <span className="badge" data-testid="coverage-message">
-                {message.coverageType === "day_off" ? "Day off" : "Shift swap"}
+                {coverageRequestLabel(message.coverageType || "")}
               </span>
             ) : null}
             <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
