@@ -4,12 +4,10 @@ import { isPermissionDenied } from "./api";
 import { db } from "./firebase";
 import { useSession } from "./session";
 
-export const EMOJI_CHOICES = ["🌸", "💗", "🌷", "💐", "🎀", "🌺", "🌹", "💖", "🦋", "🌙", "✨", "🌻", "☕", "🎵", "💛", "📚"] as const;
+export { isProfileEmoji, nameInitial, nameMark, PROFILE_EMOJI, withEmoji } from "./profileEmoji";
 
-export function withEmoji(name: string, emoji?: string): string {
-  const mark = (emoji ?? "").trim();
-  return mark ? `${mark} ${name}` : name;
-}
+/** Short set for inserting one emoji into a message. Profile marks are separate. */
+export const EMOJI_CHOICES = ["🌸", "💗", "🌷", "💐", "🎀", "🌺", "🌹", "💖", "🦋", "🌙", "✨", "🌻", "☕", "🎵", "💛", "📚"] as const;
 
 export function useEmojiMap(): Map<string, string> {
   const session = useSession();

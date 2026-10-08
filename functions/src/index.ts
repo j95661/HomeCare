@@ -23,7 +23,7 @@ import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
-import { isRole, type Role } from "./logic/roles";
+import { canClearUserEmoji, isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { zonedParts } from "./logic/time";
@@ -412,6 +412,17 @@ export const setMyEmoji = onCall(callable, async (request) => {
   return { emoji: parsed.emoji };
 });
 
+export const clearUserEmoji = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  const uid = String(asObject(request.data).uid ?? "");
+  if (!canClearUserEmoji(caller.role, caller.uid, uid)) {
+    throw new HttpsError("permission-denied", "Only an admin can clear someone else's emoji.");
+  }
+  await readProfile(uid);
+  await db.doc(`users/${uid}`).update({ emoji: "" });
+  return { cleared: true };
+});
+
 export const setMyColorScheme = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   const parsed = normalizePersonalColorScheme(asObject(request.data).colorScheme);
@@ -702,7 +713,7 @@ export const requestShiftCoverage = onCall(callable, async (request) => {
     users.filter((user) => user.uid !== caller.uid).map((user) => user.uid),
     {
       title: "Coverage request",
-      body: `${caller.displayName} requested ${label} on ${shiftSnap.get("date")} ${shiftSnap.get("start")}–${shiftSnap.get("end")}.`,
+      body: `${withEmoji(caller.displayName, caller.emoji)} requested ${label} on ${shiftSnap.get("date")} ${shiftSnap.get("start")}–${shiftSnap.get("end")}.`,
       link: "/?view=calendar",
       data: { type: "swap", requestId: ref.id, title: "Coverage request", body: caller.displayName },
     },
@@ -769,7 +780,7 @@ export const acceptShiftRequest = onCall(callable, async (request) => {
   });
   await sendVisiblePush(db, messaging, [current.requesterId], {
     title: "Coverage accepted",
-    body: `${caller.displayName} took the shift on ${shift.date} ${shift.start}–${shift.end}.`,
+    body: `${withEmoji(caller.displayName, caller.emoji)} took the shift on ${shift.date} ${shift.start}–${shift.end}.`,
     link: "/?view=calendar",
     data: { type: "swap", requestId: id, title: "Coverage accepted", body: caller.displayName },
   });

@@ -301,11 +301,16 @@ export function CalendarScreen() {
               <p>
                 {withEmoji(item.requesterName, people.find((person) => person.id === item.requesterId)?.emoji)} · {formatDay(item.shiftDate)} · {formatClock(item.shiftStart)} – {formatClock(item.shiftEnd)}
               </p>
-              <p className="meta">{item.status}{item.acceptedByName ? ` · ${item.acceptedByName}` : ""}</p>
+              <p className="meta">
+                {item.status}
+                {item.acceptedByName
+                  ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
+                  : ""}
+              </p>
               <ul className="history">
                 {(item.history ?? []).map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>
-                    {entry.action} by {entry.name} · {formatIso(entry.at)}
+                    {entry.action} by {withEmoji(entry.name, people.find((person) => person.id === entry.uid)?.emoji)} · {formatIso(entry.at)}
                   </li>
                 ))}
               </ul>

@@ -15,8 +15,8 @@ import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
-import { canDeleteActivities, canManageGuides, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
-import { EMOJI_CHOICES, useEmojiMap, withEmoji } from "../emoji";
+import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
+import { nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
 import { applyTheme, COLOR_SCHEMES, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
@@ -382,6 +382,18 @@ export function PeopleScreen() {
     }
   }
 
+  async function clearEmoji(uid: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await call("clearUserEmoji", { uid });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function revoke(uid: string) {
     setBusy(true);
     setError("");
@@ -395,11 +407,14 @@ export function PeopleScreen() {
     }
   }
 
-  if (!isSuperAdmin(session.role)) return <Notice>Only the super admin can manage accounts.</Notice>;
+  if (!canManageMeds(session.role)) return <Notice>Only an admin can clear an emoji.</Notice>;
+  const manageAccounts = isSuperAdmin(session.role);
 
   return (
     <div className="stack">
       <h2>People</h2>
+      {manageAccounts ? null : <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>}
+      {manageAccounts ? (
       <section className="panel">
         <Field label="Name">
           <input data-testid="people-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
@@ -432,7 +447,8 @@ export function PeopleScreen() {
           Add person
         </button>
       </section>
-      {invites.length > 0 ? (
+      ) : null}
+      {manageAccounts && invites.length > 0 ? (
         <ul className="list">
           {invites.map((invite) => (
             <li key={invite.id} className="card" data-testid="pending-invite">
@@ -457,6 +473,7 @@ export function PeopleScreen() {
             onSave={savePerson}
             onAskRevoke={() => setConfirmId(person.id)}
             onRevoke={() => void revoke(person.id)}
+            onClearEmoji={() => void clearEmoji(person.id)}
           />
         ))}
       </ul>
@@ -472,6 +489,7 @@ function PersonRow({
   onSave,
   onAskRevoke,
   onRevoke,
+  onClearEmoji,
 }: {
   person: Person;
   confirm: boolean;
@@ -479,10 +497,14 @@ function PersonRow({
   onSave: (person: Person, name: string, role: Role) => Promise<void>;
   onAskRevoke: () => void;
   onRevoke: () => void;
+  onClearEmoji: () => void;
 }) {
+  const session = useSession();
   const [name, setName] = useState(person.displayName);
   const [role, setRole] = useState<Role>(person.role);
   const locked = person.protected || person.role === "super_admin";
+  const manageAccounts = isSuperAdmin(session.role);
+  const showClear = Boolean(person.emoji) && canClearUserEmoji(session.role, session.uid, person.id);
   return (
     <li className="card">
       <strong>{withEmoji(person.displayName, person.emoji)}</strong>
@@ -491,7 +513,12 @@ function PersonRow({
         {!person.active ? " · Revoked" : ""}
         {locked ? " · Protected" : ""}
       </p>
-      {person.active && !locked ? (
+      {showClear ? (
+        <button type="button" data-testid="clear-emoji" disabled={busy} onClick={onClearEmoji}>
+          Clear emoji
+        </button>
+      ) : null}
+      {manageAccounts && person.active && !locked ? (
         <>
           <Field label="Name">
             <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -680,22 +707,16 @@ function SchemePicker() {
 
 function EmojiPicker() {
   const session = useSession();
-  const [choice, setChoice] = useState(session.emoji);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const current = session.emoji && PROFILE_EMOJI.includes(session.emoji as (typeof PROFILE_EMOJI)[number]) ? session.emoji : "";
 
-  useEffect(() => {
-    setChoice(session.emoji);
-  }, [session.emoji]);
-
-  async function save(next: string) {
+  async function choose(next: string) {
+    if (busy || next === current) return;
     setBusy(true);
     setError("");
-    setSaved(false);
     try {
       await session.setEmoji(next);
-      setSaved(true);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -706,46 +727,33 @@ function EmojiPicker() {
   return (
     <section className="panel">
       <h2>Your emoji</h2>
-      <p className="hint">Teammates see this next to your name. Pick one, or paste your own.</p>
-      <div className="emoji-grid">
-        {EMOJI_CHOICES.map((item) => (
+      <p className="hint">Tap once. It shows next to your name. Leave it as your initial if you prefer.</p>
+      <div className="emoji-grid choices">
+        <button
+          type="button"
+          className={current ? "emoji" : "emoji primary"}
+          data-testid="emoji-initial"
+          aria-pressed={!current}
+          disabled={busy}
+          onClick={() => void choose("")}
+        >
+          {nameInitial(session.displayName)}
+        </button>
+        {PROFILE_EMOJI.map((item) => (
           <button
             key={item}
             type="button"
-            className={choice === item ? "emoji primary" : "emoji"}
+            className={current === item ? "emoji primary" : "emoji"}
             data-testid="emoji-choice"
             data-emoji={item}
-            aria-pressed={choice === item}
-            onClick={() => {
-              setChoice(item);
-              setSaved(false);
-            }}
+            aria-pressed={current === item}
+            disabled={busy}
+            onClick={() => void choose(item)}
           >
             {item}
           </button>
         ))}
       </div>
-      <Field label="Emoji">
-        <input
-          data-testid="emoji-input"
-          value={choice}
-          onChange={(event) => {
-            setChoice(event.target.value);
-            setSaved(false);
-          }}
-          maxLength={16}
-          autoComplete="off"
-        />
-      </Field>
-      <button type="button" className="primary" data-testid="emoji-save" disabled={busy} onClick={() => void save(choice)}>
-        Save emoji
-      </button>
-      {session.emoji ? (
-        <button type="button" disabled={busy} onClick={() => void save("")}>
-          Remove emoji
-        </button>
-      ) : null}
-      {saved ? <Notice tone="info">Saved.</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
     </section>
   );
@@ -775,7 +783,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
     { view: "activities", label: "Activities", show: true },
     { view: "guides", label: "Guides", show: true },
     { view: "medlog", label: "Med log", show: canReviewLogs(session.role) },
-    { view: "people", label: "People", show: isSuperAdmin(session.role) },
+    { view: "people", label: "People", show: canManageMeds(session.role) },
     { view: "settings", label: "Settings", show: isSuperAdmin(session.role) },
   ];
 

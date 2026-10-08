@@ -20,6 +20,7 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
+import { nameMark } from "./emoji";
 import { applyTheme, resolveColorScheme } from "./themes";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
@@ -268,7 +269,7 @@ export function App() {
         <strong className="brand">HammondCare</strong>
         {gate.kind === "app" ? (
           <span>
-            {gate.session.emoji ? `${gate.session.emoji} ` : ""}
+            {nameMark(gate.session.displayName, gate.session.emoji)}{" "}
             {gate.session.onShift ? "On shift" : "Off shift"}
           </span>
         ) : null}
