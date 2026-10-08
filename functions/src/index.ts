@@ -17,7 +17,7 @@ import {
 } from "./lib";
 import { gmailEnabledWithoutEmail, sendOtpEmail, sendWelcomeEmail } from "./email";
 import { sendVisiblePush, unsubscribeTokens } from "./notify";
-import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, revokeAccount } from "./logic/accounts";
+import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, planEmailUpdate, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
@@ -557,6 +557,28 @@ export const verifySignInCode = onCall(callable, async (request) => {
   return { token };
 });
 
+async function relocateInvites(uid: string, previousEmail: string, nextEmail: string): Promise<void> {
+  const found = await db.collection("invites").where("rosterUid", "==", uid).get();
+  const invites = found.docs.map((item) => item);
+  if (invites.length === 0 && previousEmail) {
+    const direct = await db.doc(`invites/${previousEmail}`).get();
+    const rosterUid = String(direct.get("rosterUid") || "");
+    if (direct.exists && (!rosterUid || rosterUid === uid)) {
+      await db.doc(`invites/${nextEmail}`).set({ ...(direct.data() ?? {}), email: nextEmail });
+      if (direct.id !== nextEmail) await direct.ref.delete();
+      return;
+    }
+  }
+  for (const item of invites) {
+    if (item.id === nextEmail) {
+      await item.ref.update({ email: nextEmail });
+      continue;
+    }
+    await db.doc(`invites/${nextEmail}`).set({ ...(item.data() ?? {}), email: nextEmail });
+    await item.ref.delete();
+  }
+}
+
 export const updateUserAccount = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   const body = asObject(request.data);
@@ -570,16 +592,62 @@ export const updateUserAccount = onCall(callable, async (request) => {
   const nextRole = roleValue === undefined ? null : roleValue;
   if (nextRole !== null && !isRole(nextRole)) throw new HttpsError("invalid-argument", "Choose a role.");
   const target = await readProfile(uid);
+  const settings = await readSettings();
+  let emailPlan: ReturnType<typeof planEmailUpdate>;
   try {
     assertCanEdit(caller, target, nextRole);
+    emailPlan = planEmailUpdate({
+      currentEmail: target.email,
+      nextEmail: body.email === undefined || body.email === null ? target.email : String(body.email),
+      signIn: target.signIn,
+      protectedAccount: target.protected || target.role === "super_admin",
+      superAdminEmail: settings.superAdminEmail,
+    });
   } catch (error) {
     authz(error);
   }
   const role = (nextRole ?? target.role) as Role;
-  await db.doc(`users/${uid}`).update({ displayName, role });
-  await auth.updateUser(uid, { displayName });
-  await auth.setCustomUserClaims(uid, { role, active: target.active, otpVerified: target.otpVerified });
-  return { updated: true };
+  if (emailPlan.changed) await assertEmailFree(emailPlan.email);
+  const profileUpdate: { displayName: string; role: Role; email?: string; otpVerified?: boolean } = { displayName, role };
+  if (emailPlan.changed) {
+    profileUpdate.email = emailPlan.email;
+    if (emailPlan.clearVerification) profileUpdate.otpVerified = false;
+  }
+  const authUpdate: { displayName: string; email?: string; emailVerified?: boolean } = { displayName };
+  if (emailPlan.changed) {
+    authUpdate.email = emailPlan.email;
+    if (emailPlan.clearVerification) authUpdate.emailVerified = false;
+  }
+  let authChanged = false;
+  try {
+    await auth.updateUser(uid, authUpdate);
+    authChanged = emailPlan.changed;
+    if (emailPlan.changed) await auth.revokeRefreshTokens(uid);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/email-already-exists") {
+      throw new HttpsError("already-exists", "That email already has an account.");
+    }
+    if (code !== "auth/user-not-found") throw error;
+  }
+  try {
+    await db.doc(`users/${uid}`).update(profileUpdate);
+    if (emailPlan.changed) await relocateInvites(uid, target.email.trim().toLowerCase(), emailPlan.email);
+  } catch (error) {
+    if (authChanged) {
+      await auth.updateUser(uid, { email: target.email, displayName: target.displayName });
+    }
+    throw error;
+  }
+  await auth.setCustomUserClaims(uid, {
+    role,
+    active: target.active,
+    otpVerified: emailPlan.changed && emailPlan.clearVerification ? false : target.otpVerified,
+  }).catch((error: { code?: string }) => {
+    if (error.code === "auth/user-not-found") return;
+    throw error;
+  });
+  return { updated: true, email: emailPlan.email };
 });
 
 export const setMyEmoji = onCall(callable, async (request) => {

@@ -420,10 +420,10 @@ export function PeopleScreen() {
     }
   }
 
-  async function savePerson(person: Person, nextName: string, nextRole: Role) {
+  async function savePerson(person: Person, nextName: string, nextRole: Role, nextEmail: string) {
     setError("");
     try {
-      await call("updateUserAccount", { uid: person.id, displayName: nextName, role: nextRole });
+      await call("updateUserAccount", { uid: person.id, displayName: nextName, role: nextRole, email: nextEmail });
     } catch (err) {
       setError(errorText(err));
     }
@@ -597,7 +597,7 @@ function PersonRow({
   person: Person;
   confirm: boolean;
   busy: boolean;
-  onSave: (person: Person, name: string, role: Role) => Promise<void>;
+  onSave: (person: Person, name: string, role: Role, email: string) => Promise<void>;
   onAskRevoke: () => void;
   onRevoke: () => void;
   onClearEmoji: () => void;
@@ -607,11 +607,15 @@ function PersonRow({
 }) {
   const session = useSession();
   const [name, setName] = useState(person.displayName);
+  const [email, setEmail] = useState(person.email);
   const [role, setRole] = useState<Role>(person.role);
   const [open, setOpen] = useState(false);
   const [deleteCheck, setDeleteCheck] = useState<{ question: string; answer: string } | null>(null);
   const [guess, setGuess] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  useEffect(() => {
+    setEmail(person.email);
+  }, [person.email]);
   const locked = person.protected || person.role === "super_admin";
   const manageAccounts = isSuperAdmin(session.role);
   const showClear = Boolean(person.emoji) && canClearUserEmoji(session.role, session.uid, person.id);
@@ -674,6 +678,16 @@ function PersonRow({
           <Field label="Name">
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
+          <Field label="Email">
+            <input
+              data-testid="person-email"
+              type="email"
+              autoComplete="off"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </Field>
+          <p className="hint">They sign in with this address. A Gmail invite follows it until they join.</p>
           <Field label="Role">
             <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
               <option value="admin">Admin</option>
@@ -681,7 +695,7 @@ function PersonRow({
               <option value="care_provider">Care provider</option>
             </select>
           </Field>
-          <button type="button" onClick={() => void onSave(person, name, role)}>
+          <button type="button" data-testid="person-save" onClick={() => void onSave(person, name, role, email)}>
             Save
           </button>
           {confirm ? (
