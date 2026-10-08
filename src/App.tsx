@@ -21,6 +21,7 @@ import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
 import { nameMark } from "./emoji";
+import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { applyTheme, resolveColorScheme } from "./themes";
 import { todayISO, zonedParts } from "./time";
@@ -92,7 +93,10 @@ export function App() {
   const [shiftDay, setShiftDay] = useState<string | null>(null);
   const [shiftBusy, setShiftBusy] = useState(false);
   const [shiftError, setShiftError] = useState("");
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [viewPerson, setViewPerson] = useState<ViewIdentity | null>(null);
   const skipSignOut = useRef(false);
+  const viewIdRef = useRef<string | null>(null);
   const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
   const scheduledRef = useRef(false);
   const scheduleReadyRef = useRef(false);
@@ -145,6 +149,34 @@ export function App() {
   }, []);
 
   loadRef.current = load;
+  viewIdRef.current = viewId;
+
+  useEffect(() => {
+    if (!viewId || gate.kind !== "app") {
+      setViewPerson(null);
+      return;
+    }
+    return onSnapshot(doc(db, "users", viewId), (snap) => {
+      const role = snap.get("role");
+      if (!snap.exists() || snap.get("active") !== true || !isViewRole(role)) {
+        setViewId(null);
+        return;
+      }
+      setViewPerson({
+        uid: viewId,
+        displayName: String(snap.get("displayName") || "Employee"),
+        role,
+        emoji: String(snap.get("emoji") || ""),
+        onShift: snap.get("onShift") === true,
+        colorScheme: String(snap.get("colorScheme") || ""),
+      });
+    });
+  }, [viewId, gate.kind]);
+
+  useEffect(() => {
+    setViewOnly(Boolean(viewPerson));
+    return () => setViewOnly(false);
+  }, [viewPerson]);
 
   useEffect(() => {
     void getRedirectResult(auth).catch((error) => {
@@ -156,6 +188,8 @@ export function App() {
     return onAuthStateChanged(auth, (user) => {
       if (!user) {
         if (skipSignOut.current) return;
+        setViewId(null);
+        setViewPerson(null);
         setGate({ kind: "signedOut" });
         return;
       }
@@ -171,8 +205,12 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const personalScheme = gate.kind === "app" ? gate.session.personalColorScheme : "";
-  const editingAppearance = gate.kind === "app" && (route.view === "more" || route.view === "settings");
+  const personalScheme = viewPerson
+    ? viewPerson.colorScheme
+    : gate.kind === "app"
+      ? gate.session.personalColorScheme
+      : "";
+  const editingAppearance = gate.kind === "app" && !viewPerson && (route.view === "more" || route.view === "settings");
 
   useEffect(() => {
     if (gate.kind !== "app") {
@@ -201,6 +239,7 @@ export function App() {
   }, [gate.kind, load]);
 
   const setColorScheme = useCallback(async (colorScheme: string) => {
+    if (viewIdRef.current) throw new Error(VIEW_CHANGE);
     const result = await call<{ colorScheme: string }>("setMyColorScheme", { colorScheme });
     setGate((current) =>
       current.kind === "app"
@@ -210,6 +249,7 @@ export function App() {
   }, []);
 
   const setEmoji = useCallback(async (emoji: string) => {
+    if (viewIdRef.current) throw new Error(VIEW_CHANGE);
     const result = await call<{ emoji: string }>("setMyEmoji", { emoji });
     setGate((current) =>
       current.kind === "app" ? { kind: "app", session: { ...current.session, emoji: result.emoji } } : current,
@@ -244,10 +284,38 @@ export function App() {
     })();
   }, []);
 
+  const switchTo = useCallback((person: ViewIdentity) => {
+    setShiftError("");
+    setViewPerson(person);
+    setViewId(person.uid);
+    const next: RouteState = { view: "home", thread: null, guide: null, med: null, time: null };
+    writeRoute(next);
+    setRoute(next);
+  }, []);
+
+  const switchBack = useCallback(() => {
+    setShiftError("");
+    setViewPerson(null);
+    setViewId(null);
+    const next: RouteState = { view: "people", thread: null, guide: null, med: null, time: null };
+    writeRoute(next);
+    setRoute(next);
+  }, []);
+
   const sessionValue: SessionValue | null = useMemo(() => {
     if (gate.kind !== "app") return null;
-    return { ...gate.session, setEmoji, setColorScheme, onDenied };
-  }, [gate, setEmoji, setColorScheme, onDenied]);
+    const shown = displaySession(gate.session, viewPerson);
+    return {
+      ...shown,
+      setEmoji,
+      setColorScheme,
+      onDenied,
+      canSwitchView: canViewAsEmployee(gate.session.role),
+      accountUid: gate.session.uid,
+      switchTo,
+      switchBack,
+    };
+  }, [gate, viewPerson, setEmoji, setColorScheme, onDenied, switchTo, switchBack]);
 
   const appUid = gate.kind === "app" ? gate.session.uid : "";
   const appTimezone = gate.kind === "app" ? gate.session.timezone : "";
@@ -381,14 +449,22 @@ export function App() {
         {gate.kind === "app" ? (
           <button
             type="button"
-            className={gate.session.onShift ? "shift-status on" : "shift-status off"}
+            className={(viewPerson ?? gate.session).onShift ? "shift-status on" : "shift-status off"}
             data-testid="shift-status"
-            data-on={gate.session.onShift ? "true" : "false"}
-            aria-pressed={gate.session.onShift}
+            data-on={(viewPerson ?? gate.session).onShift ? "true" : "false"}
+            data-viewing={viewPerson ? "true" : "false"}
+            aria-pressed={(viewPerson ?? gate.session).onShift}
             disabled={shiftBusy}
-            onClick={() => void toggleShift()}
+            onClick={() => {
+              if (viewPerson) {
+                setShiftError(VIEW_CHANGE);
+                return;
+              }
+              void toggleShift();
+            }}
           >
-            {nameMark(gate.session.displayName, gate.session.emoji)} {gate.session.onShift ? "On shift" : "Off shift"}
+            {nameMark((viewPerson ?? gate.session).displayName, (viewPerson ?? gate.session).emoji)}{" "}
+            {(viewPerson ?? gate.session).onShift ? "On shift" : "Off shift"}
           </button>
         ) : null}
       </header>
@@ -416,6 +492,14 @@ export function App() {
         ) : null}
         {gate.kind === "app" && sessionValue ? (
           <SessionProvider value={sessionValue}>
+            {viewPerson ? (
+              <div className="view-as" data-testid="view-as-banner">
+                <p>Viewing as {viewPerson.displayName}</p>
+                <button type="button" data-testid="view-as-back" onClick={switchBack}>
+                  Switch back
+                </button>
+              </div>
+            ) : null}
             {shiftError ? <Notice>{shiftError}</Notice> : null}
             {route.view !== "home" && route.view !== "calendar" && route.view !== "messages" && route.view !== "more" ? (
               <button type="button" onClick={() => go({ view: "more", guide: null, thread: null, med: null, time: null })}>

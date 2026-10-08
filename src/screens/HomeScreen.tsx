@@ -17,6 +17,7 @@ import { useEmojiMap, withEmoji } from "../emoji";
 import { beep } from "../audio";
 import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
+import { VIEW_CHANGE } from "../viewAs";
 import { db } from "../firebase";
 import { exceptionFromData, exceptionLabel, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
@@ -143,7 +144,7 @@ export function HomeScreen({ route, go }: Props) {
   }, [day, session]);
 
   useEffect(() => {
-    if (!session.onShift) return;
+    if (!session.onShift || session.viewingAs) return;
     const tick = () => {
       const current = zonedParts(new Date(), session.timezone).time;
       const due = meds.find((med) => med.times.includes(current));
@@ -161,7 +162,7 @@ export function HomeScreen({ route, go }: Props) {
     tick();
     const id = window.setInterval(tick, 15000);
     return () => window.clearInterval(id);
-  }, [meds, logs, session.onShift, session.timezone, day]);
+  }, [meds, logs, session.onShift, session.viewingAs, session.timezone, day]);
 
   const noticeUnread = Boolean(careNotice && careNotice.id !== readNoticeId);
 
@@ -170,6 +171,11 @@ export function HomeScreen({ route, go }: Props) {
   }, [careNotice, noticeUnread]);
 
   async function toggleNotice() {
+    if (session.viewingAs) {
+      if (noticeOpen && careNotice) noticeHide.current = careNotice.id;
+      setNoticeOpen((open) => !open);
+      return;
+    }
     if (noticeOpen && careNotice && noticeUnread) {
       noticeHide.current = careNotice.id;
       setNoticeOpen(false);
@@ -192,6 +198,10 @@ export function HomeScreen({ route, go }: Props) {
   async function postNote() {
     const text = body.trim();
     if (!text && !picture.file) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     setBusy(true);
     setError("");
     try {

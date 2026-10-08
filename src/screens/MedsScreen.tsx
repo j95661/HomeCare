@@ -5,6 +5,7 @@ import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { canManageMeds } from "../roles";
 import { useSession } from "../session";
+import { VIEW_CHANGE } from "../viewAs";
 import { formatClock } from "../time";
 import type { Medication } from "../types";
 
@@ -37,6 +38,10 @@ export function MedsScreen() {
   }
 
   async function save() {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     const times = parseTimes(form.times);
     if (!form.name.trim() || !form.frequency.trim() || !times) {
       setError("Add a name, how often, and times like 08:00, 20:00.");
@@ -126,7 +131,13 @@ export function MedsScreen() {
                   >
                     Edit
                   </button>
-                  <button type="button" onClick={() => void deleteDoc(doc(db, "medications", med.id)).catch((err) => setError(errorText(err)))}>
+                  <button type="button" onClick={() => {
+                    if (session.viewingAs) {
+                      setError(VIEW_CHANGE);
+                      return;
+                    }
+                    void deleteDoc(doc(db, "medications", med.id)).catch((err) => setError(errorText(err)));
+                  }}>
                     Remove
                   </button>
                 </div>

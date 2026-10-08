@@ -17,6 +17,7 @@ import { db } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isAccountEnabled, isSuperAdmin, roleLabel } from "../roles";
+import { VIEW_CHANGE } from "../viewAs";
 import { nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
 import { applyTheme, COLOR_CHART, COLOR_SCHEMES, parseCustomColor, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
@@ -44,6 +45,10 @@ export function ActivitiesScreen() {
   }, [session]);
 
   async function save() {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     if (!title.trim()) return;
     setError("");
     try {
@@ -104,7 +109,13 @@ export function ActivitiesScreen() {
                 Update
               </button>
               {canDeleteActivities(session.role) ? (
-                <button type="button" onClick={() => void deleteDoc(doc(db, "activities", item.id)).catch((err) => setError(errorText(err)))}>
+                <button type="button" onClick={() => {
+                  if (session.viewingAs) {
+                    setError(VIEW_CHANGE);
+                    return;
+                  }
+                  void deleteDoc(doc(db, "activities", item.id)).catch((err) => setError(errorText(err)));
+                }}>
                   Remove
                 </button>
               ) : null}
@@ -151,6 +162,10 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
   const current = guides.find((guide) => guide.id === guideId);
 
   async function save() {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     const cleanSteps = steps.filter((step) => step.title.trim());
     if (!title.trim()) {
       setError("Add a title.");
@@ -275,7 +290,13 @@ export function GuidesScreen({ guideId, go }: { guideId: string | null; go: (pat
                   Edit
                 </button>
                 {canManageMeds(session.role) ? (
-                  <button type="button" onClick={() => void deleteDoc(doc(db, "guides", guide.id)).catch((err) => setError(errorText(err)))}>
+                  <button type="button" onClick={() => {
+                    if (session.viewingAs) {
+                      setError(VIEW_CHANGE);
+                      return;
+                    }
+                    void deleteDoc(doc(db, "guides", guide.id)).catch((err) => setError(errorText(err)));
+                  }}>
                     Remove
                   </button>
                 ) : null}
@@ -615,6 +636,24 @@ function PersonRow({
         {person.awaitingGoogle ? " · Waiting for Gmail" : ""}
         {locked ? " · Protected" : ""}
       </p>
+      {session.canSwitchView && person.active && person.id !== session.accountUid ? (
+        <button
+          type="button"
+          data-testid="view-as"
+          onClick={() =>
+            session.switchTo({
+              uid: person.id,
+              displayName: person.displayName,
+              role: person.role,
+              emoji: person.emoji || "",
+              onShift: person.onShift === true,
+              colorScheme: person.colorScheme || "",
+            })
+          }
+        >
+          See their view
+        </button>
+      ) : null}
       {manageAccounts && person.active && !isAccountEnabled(person) ? (
         <button type="button" className="primary" data-testid="enable-person" disabled={busy} onClick={onEnable}>
           Enable
@@ -656,7 +695,7 @@ function PersonRow({
           )}
         </>
       ) : null}
-      {manageAccounts && !locked && person.id !== session.uid ? (
+      {manageAccounts && !locked && person.id !== session.accountUid ? (
         deleteCheck ? (
           <>
             <Field label={deleteCheck.question}>

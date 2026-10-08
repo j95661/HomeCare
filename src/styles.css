@@ -218,6 +218,16 @@ button.person-choice { display: grid; justify-items: start; gap: 2px; }
   background: var(--panel);
   border: 2px solid var(--ink);
 }
+.view-as {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 18px;
+  background: var(--glow);
+}
+.view-as p { margin: 0; font-weight: 700; }
 .notice.error, .notice[role="alert"] { border-color: var(--warn); color: var(--warn); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .times { display: flex; flex-wrap: wrap; gap: 8px; }
