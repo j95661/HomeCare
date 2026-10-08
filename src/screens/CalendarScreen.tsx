@@ -324,9 +324,10 @@ export function CalendarScreen() {
                     <ul className="list collapse-body">
                       {group.shifts.map((template) => (
                         <li key={template.id} className="card" data-testid="pattern-row" data-weekday={template.weekday}>
-                          <strong>
-                            {WEEKDAY_NAMES[template.weekday] ?? "Weekday"} · {formatClock(template.start)} – {formatClock(template.end)}
-                          </strong>
+                          <strong>{WEEKDAY_NAMES[template.weekday] ?? "Weekday"}</strong>
+                          <p>
+                            {formatClock(template.start)} – {formatClock(template.end)}
+                          </p>
                           <p className="meta">{patternSpan(template)}</p>
                           <Field label="Person">
                             <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
