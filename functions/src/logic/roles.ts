@@ -48,3 +48,20 @@ export function canClearUserEmoji(role: Role, callerUid: string, targetUid: stri
   if (role !== "super_admin" && role !== "admin") return false;
   return targetUid.length > 0 && callerUid !== targetUid;
 }
+
+/** Care team messages are posted and delivered to these roles. */
+export function isCareStaff(role: Role): boolean {
+  return role === "team_lead" || role === "care_provider";
+}
+
+/** Missing `enabled` means the account was created before the roster flag and can sign in. */
+export function isAccountEnabled(user: { enabled?: boolean | null }): boolean {
+  return user.enabled !== false;
+}
+
+/** The author can delete their own message. An admin can delete any message they can open. */
+export function canDeleteMessage(role: Role, callerUid: string, senderId: string): boolean {
+  if (!senderId || !callerUid) return false;
+  if (callerUid === senderId) return true;
+  return role === "super_admin" || role === "admin";
+}

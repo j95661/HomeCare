@@ -6,6 +6,8 @@ export type ReminderUser = {
   active: boolean;
   otpVerified: boolean;
   onShift: boolean;
+  role?: string;
+  enabled?: boolean;
 };
 
 export type ReminderMed = {
@@ -43,11 +45,21 @@ const WINDOW_MINUTES = 2;
 const SNOOZE_GRACE_MS = 10 * 60 * 1000;
 
 export function medicationRecipients(users: ReminderUser[]): ReminderUser[] {
-  return users.filter((user) => user.active && user.otpVerified && user.onShift);
+  return users.filter((user) => user.active && user.otpVerified && user.onShift && user.enabled !== false);
 }
 
 export function messageRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
-  return users.filter((user) => user.active && user.otpVerified && user.uid !== senderId);
+  return users.filter((user) => user.active && user.otpVerified && user.enabled !== false && user.uid !== senderId);
+}
+
+/** The care-team thread notifies care providers and team leads only. */
+export function careTeamRecipients(users: ReminderUser[], senderId: string): ReminderUser[] {
+  return messageRecipients(users, senderId).filter((user) => user.role === "care_provider" || user.role === "team_lead");
+}
+
+export function directRecipients(users: ReminderUser[], senderId: string, participantIds: string[]): string[] {
+  const allowed = new Set(messageRecipients(users, senderId).map((user) => user.uid));
+  return participantIds.filter((uid) => allowed.has(uid));
 }
 
 export function selectMedicationDispatches(input: {

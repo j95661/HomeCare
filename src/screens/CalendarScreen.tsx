@@ -16,7 +16,7 @@ import { call, errorText, isPermissionDenied } from "../api";
 import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
-import { canManageSchedule } from "../roles";
+import { canManageSchedule, isAccountEnabled } from "../roles";
 import {
   WEEKDAY_NAMES,
   dayExceptionLabel,
@@ -32,6 +32,11 @@ import {
 import { useSession } from "../session";
 import { addDays, addMonths, formatClock, formatDay, formatIso, monthGrid, startOfWeek, todayISO } from "../time";
 import type { Person, ShiftRequest } from "../types";
+
+function rosterName(person: Person): string {
+  const name = withEmoji(person.displayName, person.emoji);
+  return isAccountEnabled(person) ? name : `${name} (Not enabled)`;
+}
 
 function patternSpan(template: ShiftTemplate): string {
   const parts: string[] = [];
@@ -256,7 +261,7 @@ export function CalendarScreen() {
               <option value="">Choose</option>
               {people.map((person) => (
                 <option key={person.id} value={person.id}>
-                  {withEmoji(person.displayName, person.emoji)}
+                  {rosterName(person)}
                 </option>
               ))}
             </select>
@@ -300,7 +305,7 @@ export function CalendarScreen() {
                   <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
                     {people.map((person) => (
                       <option key={person.id} value={person.id}>
-                        {withEmoji(person.displayName, person.emoji)}
+                        {rosterName(person)}
                       </option>
                     ))}
                   </select>

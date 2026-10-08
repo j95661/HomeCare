@@ -15,7 +15,7 @@ import {
   requireAuth,
   requireReadyUser,
 } from "./lib";
-import { sendOtpEmail } from "./email";
+import { sendOtpEmail, sendWelcomeEmail } from "./email";
 import { sendVisiblePush, unsubscribeTokens } from "./notify";
 import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount } from "./logic/accounts";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
@@ -23,8 +23,15 @@ import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
-import { canClearUserEmoji, canManageSchedule, isRole, type Role } from "./logic/roles";
-import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
+import { canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnabled, isRole, type Role } from "./logic/roles";
+import {
+  careTeamRecipients,
+  directRecipients,
+  selectMedicationDispatches,
+  type PendingSnooze,
+  type ReminderMed,
+  type ReminderUser,
+} from "./logic/reminders";
 import {
   exceptionFromData,
   planCoverageWrite,
@@ -217,6 +224,9 @@ async function emailCodeAccount(email: string): Promise<{ uid: string; role: Rol
   if (!snap.exists || snap.get("signIn") !== "email_otp") {
     throw new HttpsError("not-found", "That email is not set up for a sign-in code.");
   }
+  if (!isAccountEnabled({ enabled: snap.get("enabled") as boolean | undefined })) {
+    throw new HttpsError("permission-denied", "This account is not enabled yet.");
+  }
   if (record.disabled || snap.get("active") !== true) {
     throw new HttpsError("permission-denied", "This account has been revoked.");
   }
@@ -247,20 +257,10 @@ export const createUserAccount = onCall(callable, async (request) => {
     authz(error);
   }
   await assertEmailFree(email);
-  if (signIn === "google") {
-    await db.doc(`invites/${email}`).set({
-      email,
-      displayName,
-      role,
-      signIn: "google",
-      createdBy: caller.uid,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    return { invited: true };
-  }
+  const enableNow = body.enableNow === true;
   let created: { uid: string };
   try {
-    created = await auth.createUser({ email, displayName, disabled: false });
+    created = await auth.createUser({ email, displayName, disabled: true });
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "auth/email-already-exists") {
@@ -273,10 +273,12 @@ export const createUserAccount = onCall(callable, async (request) => {
     email,
     displayName,
     role,
-    signIn: "email_otp",
+    signIn,
     emoji: "",
     colorScheme: "",
     active: true,
+    enabled: false,
+    awaitingGoogle: false,
     protected: false,
     otpVerified: false,
     onShift: false,
@@ -286,7 +288,72 @@ export const createUserAccount = onCall(callable, async (request) => {
     createdBy: caller.uid,
   });
   await auth.setCustomUserClaims(created.uid, { role, active: true, otpVerified: false });
-  return { uid: created.uid };
+  if (!enableNow) return { uid: created.uid, enabled: false };
+  try {
+    await enableRosterAccount(created.uid, caller.uid);
+    return { uid: created.uid, enabled: true };
+  } catch (error) {
+    const message = error instanceof HttpsError ? error.message : "The welcome email could not be sent.";
+    return { uid: created.uid, enabled: false, emailError: message };
+  }
+});
+
+async function enableRosterAccount(uid: string, by: string): Promise<void> {
+  const snap = await db.doc(`users/${uid}`).get();
+  if (!snap.exists) throw new HttpsError("not-found", "That person was not found.");
+  if (snap.get("active") !== true) throw new HttpsError("failed-precondition", "This account has been revoked.");
+  if (snap.get("protected") === true || snap.get("role") === "super_admin") {
+    throw new HttpsError("failed-precondition", "That account is already on the team.");
+  }
+  if (isAccountEnabled({ enabled: snap.get("enabled") as boolean | undefined })) {
+    throw new HttpsError("failed-precondition", "This person is already enabled.");
+  }
+  const email = String(snap.get("email") || "").trim().toLowerCase();
+  const displayName = String(snap.get("displayName") || email);
+  const role = snap.get("role");
+  const signIn = snap.get("signIn") === "google" ? "google" : "email_otp";
+  if (!isRole(role) || role === "super_admin") throw new HttpsError("failed-precondition", "That account has no role.");
+  await sendWelcomeEmail(email, displayName, signIn);
+  if (signIn === "google") {
+    try {
+      await auth.deleteUser(uid);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "auth/user-not-found") throw error;
+    }
+    await db.doc(`users/${uid}`).update({ enabled: true, awaitingGoogle: true });
+    await db.doc(`invites/${email}`).set({
+      email,
+      displayName,
+      role,
+      signIn: "google",
+      rosterUid: uid,
+      createdBy: by,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return;
+  }
+  try {
+    await auth.updateUser(uid, { disabled: false, displayName });
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/user-not-found") {
+      throw new HttpsError("failed-precondition", "That sign-in could not be turned on.");
+    }
+    throw error;
+  }
+  await db.doc(`users/${uid}`).update({ enabled: true, awaitingGoogle: false });
+}
+
+export const enableUserAccount = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  if (caller.role !== "super_admin" || !caller.protected) {
+    throw new HttpsError("permission-denied", "Only the super admin can enable a person.");
+  }
+  const uid = String(asObject(request.data).uid ?? "");
+  if (!uid) throw new HttpsError("invalid-argument", "Choose a person.");
+  await enableRosterAccount(uid, caller.uid);
+  return { enabled: true };
 });
 
 export const removeInvite = onCall(callable, async (request) => {
@@ -299,7 +366,25 @@ export const removeInvite = onCall(callable, async (request) => {
   const ref = db.doc(`invites/${email}`);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "That invite was not found.");
+  const rosterUid = String(snap.get("rosterUid") || "");
+  const displayName = String(snap.get("displayName") || email);
+  if (rosterUid) {
+    const profile = await db.doc(`users/${rosterUid}`).get();
+    if (profile.exists) {
+      await db.doc(`users/${rosterUid}`).update({ enabled: false, awaitingGoogle: false });
+    }
+  }
   await ref.delete();
+  if (rosterUid) {
+    try {
+      await auth.getUser(rosterUid);
+      await auth.updateUser(rosterUid, { disabled: true, email, displayName });
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "auth/user-not-found") throw error;
+      await auth.createUser({ uid: rosterUid, email, displayName, disabled: true });
+    }
+  }
   return { removed: true };
 });
 
@@ -319,7 +404,10 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
       if (userSnap.get("active") !== true) {
         throw new HttpsError("permission-denied", "This account has been revoked.");
       }
-      return { role: String(userSnap.get("role") || ""), already: true };
+      if (!isAccountEnabled({ enabled: userSnap.get("enabled") as boolean | undefined })) {
+        throw new HttpsError("permission-denied", "This account is not enabled yet.");
+      }
+      return { role: String(userSnap.get("role") || ""), already: true, rosterUid: String(userSnap.get("migratedFrom") || "") };
     }
     const inviteSnap = await tx.get(inviteRef);
     if (!inviteSnap.exists || inviteSnap.get("signIn") !== "google") {
@@ -329,8 +417,41 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
     if (!isRole(role) || role === "super_admin") {
       throw new HttpsError("failed-precondition", "That invite is not valid.");
     }
+    const rosterUid = String(inviteSnap.get("rosterUid") || "");
     const displayName = String(inviteSnap.get("displayName") || record.displayName || email).slice(0, 80);
     const now = Timestamp.now();
+    if (rosterUid && rosterUid !== uid) {
+      const rosterRef = db.doc(`users/${rosterUid}`);
+      const rosterSnap = await tx.get(rosterRef);
+      if (!rosterSnap.exists || rosterSnap.get("active") !== true) {
+        throw new HttpsError("permission-denied", "You are not on the HammondCare team.");
+      }
+      if (!isAccountEnabled({ enabled: rosterSnap.get("enabled") as boolean | undefined })) {
+        throw new HttpsError("permission-denied", "This account is not enabled yet.");
+      }
+      tx.set(userRef, {
+        email,
+        displayName: String(rosterSnap.get("displayName") || displayName).slice(0, 80),
+        role: isRole(rosterSnap.get("role")) ? rosterSnap.get("role") : role,
+        signIn: "google",
+        emoji: String(rosterSnap.get("emoji") || ""),
+        colorScheme: String(rosterSnap.get("colorScheme") || ""),
+        active: true,
+        enabled: true,
+        awaitingGoogle: false,
+        protected: false,
+        otpVerified: true,
+        onShift: rosterSnap.get("onShift") === true,
+        passwordChangedAt: rosterSnap.get("passwordChangedAt") || now,
+        passwordExpiresAt: rosterSnap.get("passwordExpiresAt") || Timestamp.fromDate(expiresAt(now.toDate(), 730)),
+        createdAt: rosterSnap.get("createdAt") || FieldValue.serverTimestamp(),
+        createdBy: String(rosterSnap.get("createdBy") || inviteSnap.get("createdBy") || ""),
+        migratedFrom: rosterUid,
+      });
+      tx.delete(rosterRef);
+      tx.delete(inviteRef);
+      return { role, already: false, displayName: String(rosterSnap.get("displayName") || displayName), rosterUid };
+    }
     tx.set(userRef, {
       email,
       displayName,
@@ -339,6 +460,8 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
       emoji: "",
       colorScheme: "",
       active: true,
+      enabled: true,
+      awaitingGoogle: false,
       protected: false,
       otpVerified: true,
       onShift: false,
@@ -348,16 +471,43 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
       createdBy: String(inviteSnap.get("createdBy") || ""),
     });
     tx.delete(inviteRef);
-    return { role, already: false, displayName };
+    return { role, already: false, displayName, rosterUid: "" };
   });
   if (!joined.already && joined.displayName) {
     await auth.updateUser(uid, { displayName: joined.displayName });
+  }
+  if (joined.rosterUid) {
+    await migrateRosterRefs(joined.rosterUid, uid);
+    await db.doc(`users/${uid}`).update({ migratedFrom: FieldValue.delete() });
   }
   if (isRole(joined.role)) {
     await auth.setCustomUserClaims(uid, { role: joined.role, active: true, otpVerified: true });
   }
   return { joined: true };
 });
+
+async function migrateRosterRefs(fromUid: string, toUid: string): Promise<void> {
+  const [templates, exceptions, requested, accepted] = await Promise.all([
+    db.collection("shiftTemplates").where("userId", "==", fromUid).get(),
+    db.collection("shiftExceptions").where("userId", "==", fromUid).get(),
+    db.collection("shiftRequests").where("requesterId", "==", fromUid).get(),
+    db.collection("shiftRequests").where("acceptedBy", "==", fromUid).get(),
+  ]);
+  const writes = new Map<string, Record<string, string>>();
+  const put = (path: string, data: Record<string, string>) => {
+    writes.set(path, { ...(writes.get(path) ?? {}), ...data });
+  };
+  for (const item of templates.docs) put(item.ref.path, { userId: toUid });
+  for (const item of exceptions.docs) put(item.ref.path, { userId: toUid });
+  for (const item of requested.docs) put(item.ref.path, { requesterId: toUid });
+  for (const item of accepted.docs) put(item.ref.path, { acceptedBy: toUid });
+  const entries = [...writes.entries()];
+  for (let index = 0; index < entries.length; index += 400) {
+    const batch = db.batch();
+    for (const [path, data] of entries.slice(index, index + 400)) batch.update(db.doc(path), data);
+    await batch.commit();
+  }
+}
 
 export const requestSignInCode = onCall(callable, async (request) => {
   const email = String(asObject(request.data).email ?? "").trim().toLowerCase();
@@ -602,6 +752,8 @@ async function loadActiveUsers(): Promise<Array<ReminderUser & { emoji: string }
     uid: doc.id,
     displayName: String(doc.get("displayName") || ""),
     emoji: String(doc.get("emoji") || ""),
+    role: String(doc.get("role") || ""),
+    enabled: doc.get("enabled") !== false,
     active: doc.get("active") === true,
     otpVerified: doc.get("otpVerified") === true,
     onShift: doc.get("onShift") === true,
@@ -968,12 +1120,9 @@ async function notifyMessage(
 ): Promise<void> {
   const users = await loadActiveUsers();
   const preview = text.length > 120 ? `${text.slice(0, 117)}...` : text;
-  let recipients: string[];
-  if (directParticipantIds) {
-    recipients = directParticipantIds.filter((uid) => uid !== senderId);
-  } else {
-    recipients = users.filter((user) => user.uid !== senderId).map((user) => user.uid);
-  }
+  const recipients = directParticipantIds
+    ? directRecipients(users, senderId, directParticipantIds)
+    : careTeamRecipients(users, senderId).map((user) => user.uid);
   const sender = users.find((user) => user.uid === senderId);
   const title = withEmoji(senderName || "New message", sender?.emoji);
   await sendVisiblePush(db, messaging, recipients, {
@@ -988,6 +1137,54 @@ export const onGroupMessage = onDocumentCreated("groupThread/{docId}/messages/{m
   if (event.params.docId !== "main" || !event.data) return;
   const data = event.data.data();
   await notifyMessage(String(data.senderId || ""), String(data.senderName || ""), String(data.text || ""), "group");
+});
+
+export const deleteMessage = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  const body = asObject(request.data);
+  const thread = String(body.thread ?? "");
+  const messageId = String(body.messageId ?? "");
+  if (!thread || !messageId || thread.includes("/") || messageId.includes("/")) {
+    throw new HttpsError("invalid-argument", "Choose a message.");
+  }
+  const group = thread === "group";
+  if (!group && !thread.startsWith("direct_")) throw new HttpsError("invalid-argument", "Choose a message.");
+  const parentRef = group ? db.doc("groupThread/main") : db.doc(`threads/${thread}`);
+  const messageRef = parentRef.collection("messages").doc(messageId);
+  if (!group) {
+    const parent = await parentRef.get();
+    if (!parent.exists || parent.get("type") !== "direct") throw new HttpsError("not-found", "That message was not found.");
+    const participants = (parent.get("participantIds") as string[]) || [];
+    const admin = caller.role === "super_admin" || caller.role === "admin";
+    if (!admin && !participants.includes(caller.uid)) {
+      throw new HttpsError("permission-denied", "You cannot open that message.");
+    }
+  }
+  const message = await messageRef.get();
+  if (!message.exists) throw new HttpsError("not-found", "That message was not found.");
+  const senderId = String(message.get("senderId") || "");
+  if (!canDeleteMessage(caller.role, caller.uid, senderId)) {
+    throw new HttpsError("permission-denied", "Only the sender or an admin can delete this message.");
+  }
+  await messageRef.delete();
+  const remaining = await parentRef.collection("messages").orderBy("createdAt", "desc").limit(1).get();
+  if (remaining.empty) {
+    await parentRef.update({
+      lastMessageText: "",
+      lastSenderId: "",
+      lastSenderName: "",
+      lastMessageAt: FieldValue.serverTimestamp(),
+    });
+  } else {
+    const latest = remaining.docs[0];
+    await parentRef.update({
+      lastMessageText: String(latest.get("text") || "").slice(0, 140),
+      lastSenderId: String(latest.get("senderId") || ""),
+      lastSenderName: String(latest.get("senderName") || ""),
+      lastMessageAt: latest.get("createdAt") || FieldValue.serverTimestamp(),
+    });
+  }
+  return { deleted: true };
 });
 
 export const onDirectMessage = onDocumentCreated("threads/{threadId}/messages/{messageId}", async (event) => {

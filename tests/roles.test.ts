@@ -8,6 +8,9 @@ import {
   canReviewAllLogs,
   canRevoke,
   canClearUserEmoji as serverCanClearUserEmoji,
+  canDeleteMessage as serverCanDeleteMessage,
+  isAccountEnabled as serverIsAccountEnabled,
+  isCareStaff as serverIsCareStaff,
   canWriteSettings,
   isProtectedAccount,
   isRole,
@@ -15,6 +18,9 @@ import {
 } from "../functions/src/logic/roles";
 import {
   canClearUserEmoji,
+  canDeleteMessage,
+  isAccountEnabled,
+  isCareStaff,
   canDeleteActivities,
   canManageGuides,
   canManageMeds,
@@ -44,7 +50,12 @@ describe("role capabilities", () => {
       expect(canDeleteActivities(role)).toBe(serverCanDeleteActivities(role));
       expect(isSuperAdmin(role)).toBe(role === "super_admin");
       expect(canClearUserEmoji(role, "admin", "pat")).toBe(serverCanClearUserEmoji(role, "admin", "pat"));
+      expect(isCareStaff(role)).toBe(serverIsCareStaff(role));
+      expect(canDeleteMessage(role, "a", "a")).toBe(serverCanDeleteMessage(role, "a", "a"));
+      expect(canDeleteMessage(role, "a", "b")).toBe(serverCanDeleteMessage(role, "a", "b"));
     }
+    expect(isAccountEnabled({})).toBe(serverIsAccountEnabled({}));
+    expect(isAccountEnabled({ enabled: false })).toBe(serverIsAccountEnabled({ enabled: false }));
   });
 
   it("lets admins clear another person's emoji", () => {
@@ -73,6 +84,18 @@ describe("role capabilities", () => {
     expect(isProtectedAccount({ role: "super_admin" })).toBe(true);
     expect(isProtectedAccount({ role: "admin", protected: true })).toBe(true);
     expect(isProtectedAccount({ role: "care_provider", protected: false })).toBe(false);
+  });
+
+  it("lets the author or an admin delete a message, and keeps the care team to care staff", () => {
+    expect(roles.filter(isCareStaff)).toEqual(["team_lead", "care_provider"]);
+    expect(canDeleteMessage("care_provider", "pat", "pat")).toBe(true);
+    expect(canDeleteMessage("team_lead", "lead", "pat")).toBe(false);
+    expect(canDeleteMessage("admin", "admin", "pat")).toBe(true);
+    expect(canDeleteMessage("super_admin", "super", "pat")).toBe(true);
+    expect(canDeleteMessage("admin", "admin", "")).toBe(false);
+    expect(isAccountEnabled({})).toBe(true);
+    expect(isAccountEnabled({ enabled: true })).toBe(true);
+    expect(isAccountEnabled({ enabled: false })).toBe(false);
   });
 
   it("uses short labels on screen", () => {

@@ -295,6 +295,33 @@ button.emoji {
   box-shadow: 0 0 0 1px #2c1220;
   flex: none;
 }
+.color-chart {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.color-chart legend { font-weight: 700; margin-bottom: 8px; grid-column: 1 / -1; }
+.color-chart button {
+  min-height: 52px;
+  padding: 0;
+  border: 3px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.color-chart button[aria-pressed="true"] {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+input[type="color"] {
+  width: 100%;
+  min-height: 52px;
+  padding: 6px;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background: var(--panel);
+}
 
 .modal {
   width: min(560px, 100%);

@@ -78,6 +78,8 @@ async function ensureUser({ email: userEmail, password: userPassword, displayNam
       signIn: existing.exists && existing.get("signIn") ? existing.get("signIn") : "password",
       emoji: existing.exists ? String(existing.get("emoji") || "") : "",
       colorScheme: existing.exists ? String(existing.get("colorScheme") || "") : "",
+      enabled: true,
+      awaitingGoogle: false,
       otpVerified,
       onShift,
       passwordChangedAt,
@@ -120,7 +122,7 @@ const groupRef = db.doc("groupThread/main");
 if (!(await groupRef.get()).exists) {
   await groupRef.set({
     type: "group",
-    title: "Everyone",
+    title: "Care team",
     lastMessageText: "",
     lastMessageAt: FieldValue.serverTimestamp(),
     lastSenderId: "",

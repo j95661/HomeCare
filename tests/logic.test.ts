@@ -3,7 +3,7 @@ import { assertCanAssign, assertCanEdit, AuthzError, revokeAccount, type Account
 import { canSendOtp, checkOtpCode, hashOtp, OTP_TTL_MS } from "../functions/src/logic/otp";
 import { DEFAULT_PASSWORD_MAX_AGE_DAYS, expiresAt, validatePassword } from "../functions/src/logic/password";
 import { buildMulticast } from "../functions/src/logic/push";
-import { medicationRecipients, messageRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
+import { careTeamRecipients, directRecipients, medicationRecipients, messageRecipients, selectMedicationDispatches } from "../functions/src/logic/reminders";
 import { canAssignRole, canRevoke, isProtectedAccount } from "../functions/src/logic/roles";
 import { applyAcceptance } from "../functions/src/logic/shifts";
 import { isWithinWindow, zonedParts } from "../functions/src/logic/time";
@@ -168,6 +168,19 @@ describe("reminders and push", () => {
     expect(due.map((item) => item.receiptId)).toEqual(["snooze_s2"]);
     expect(isWithinWindow("08:00", "08:01", 2)).toBe(true);
     expect(isWithinWindow("08:00", "08:02", 2)).toBe(false);
+  });
+
+  it("sends the care team thread only to enabled care providers and team leads", () => {
+    const roster = [
+      { uid: "lead", displayName: "Lead", role: "team_lead", active: true, otpVerified: true, onShift: false, enabled: true },
+      { uid: "pat", displayName: "Pat", role: "care_provider", active: true, otpVerified: true, onShift: false, enabled: true },
+      { uid: "admin", displayName: "Admin", role: "admin", active: true, otpVerified: true, onShift: false, enabled: true },
+      { uid: "super", displayName: "Super", role: "super_admin", active: true, otpVerified: true, onShift: true, enabled: true },
+      { uid: "hold", displayName: "Hold", role: "care_provider", active: true, otpVerified: true, onShift: true, enabled: false },
+      { uid: "sam", displayName: "Sam", role: "care_provider", active: true, otpVerified: true, onShift: false },
+    ];
+    expect(careTeamRecipients(roster, "pat").map((user) => user.uid)).toEqual(["lead", "sam"]);
+    expect(directRecipients(roster, "pat", ["pat", "hold", "admin"])).toEqual(["admin"]);
   });
 
   it("builds an audible visible push, with the medication prompt kept on screen", () => {
