@@ -66,7 +66,18 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(SHELL_CACHE);
-      await Promise.all(SHELL_PRECACHE.map((url) => cache.add(url).catch(() => undefined)));
+      const urls = new Set(SHELL_PRECACHE);
+      try {
+        const response = await fetch("/index.html", { cache: "no-cache" });
+        const html = await response.clone().text();
+        await cache.put("/index.html", response);
+        for (const match of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
+          if (match[1].startsWith("/")) urls.add(match[1]);
+        }
+      } catch (error) {
+        // The static list still caches when the shell cannot be read yet.
+      }
+      await Promise.all([...urls].map((url) => cache.add(url).catch(() => undefined)));
       await self.skipWaiting();
     })(),
   );
