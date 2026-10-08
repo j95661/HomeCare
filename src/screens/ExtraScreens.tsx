@@ -671,9 +671,12 @@ function PersonRow({
         {person.phone ? ` · ${person.phone}` : ""} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
         {person.active && !isAccountEnabled(person) ? " · Not enabled" : ""}
-        {person.awaitingGoogle ? " · Waiting for Gmail" : ""}
+        {person.awaitingGoogle ? " · Enabled · signs in with Gmail" : ""}
         {locked ? " · Protected" : ""}
       </p>
+      {person.awaitingGoogle ? (
+        <p className="hint">They open HammondCare and choose Sign in with Gmail. This line stays until that sign-in finishes.</p>
+      ) : null}
       {session.canSwitchView && person.active && person.id !== session.accountUid ? (
         <button
           type="button"
