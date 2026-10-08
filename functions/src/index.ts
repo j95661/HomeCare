@@ -18,6 +18,7 @@ import {
 import { gmailEnabledWithoutEmail, sendOtpEmail, sendWelcomeEmail } from "./email";
 import { sendVisiblePush, unsubscribeTokens } from "./notify";
 import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, planEmailUpdate, revokeAccount } from "./logic/accounts";
+import { normalizePhone } from "./logic/phone";
 import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpChallenge } from "./logic/otp";
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
@@ -249,6 +250,8 @@ export const createUserAccount = onCall(callable, async (request) => {
   const displayName = String(body.displayName ?? "").trim();
   const signIn = body.signIn;
   const role = body.role;
+  const phone = normalizePhone(body.phone);
+  if (!phone.ok) throw new HttpsError("invalid-argument", phone.reason);
   if (!validEmail(email)) throw new HttpsError("invalid-argument", "Enter a valid email.");
   if (displayName.length < 1 || displayName.length > 80) {
     throw new HttpsError("invalid-argument", "Enter a name.");
@@ -279,6 +282,7 @@ export const createUserAccount = onCall(callable, async (request) => {
   await db.doc(`users/${created.uid}`).set({
     email,
     displayName,
+    phone: phone.phone,
     role,
     signIn,
     emoji: "",
@@ -609,7 +613,17 @@ export const updateUserAccount = onCall(callable, async (request) => {
   }
   const role = (nextRole ?? target.role) as Role;
   if (emailPlan.changed) await assertEmailFree(emailPlan.email);
-  const profileUpdate: { displayName: string; role: Role; email?: string; otpVerified?: boolean } = { displayName, role };
+  let phone: string | undefined;
+  if (body.phone !== undefined && body.phone !== null) {
+    const parsed = normalizePhone(body.phone);
+    if (!parsed.ok) throw new HttpsError("invalid-argument", parsed.reason);
+    phone = parsed.phone;
+  }
+  const profileUpdate: { displayName: string; role: Role; email?: string; otpVerified?: boolean; phone?: string } = {
+    displayName,
+    role,
+  };
+  if (phone !== undefined) profileUpdate.phone = phone;
   if (emailPlan.changed) {
     profileUpdate.email = emailPlan.email;
     if (emailPlan.clearVerification) profileUpdate.otpVerified = false;

@@ -366,6 +366,7 @@ export function PeopleScreen() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [signIn, setSignIn] = useState<"google" | "email_otp">("google");
   const [role, setRole] = useState<Role>("care_provider");
   const [enableNow, setEnableNow] = useState(false);
@@ -404,12 +405,14 @@ export function PeopleScreen() {
       const result = await call<{ enabled: boolean; emailError?: string }>("createUserAccount", {
         displayName,
         email,
+        phone,
         role,
         signIn,
         enableNow,
       });
       setDisplayName("");
       setEmail("");
+      setPhone("");
       setEnableNow(false);
       if (result.emailError && result.enabled) setNotice(result.emailError);
       else if (result.emailError) setError(result.emailError);
@@ -420,10 +423,10 @@ export function PeopleScreen() {
     }
   }
 
-  async function savePerson(person: Person, nextName: string, nextRole: Role, nextEmail: string) {
+  async function savePerson(person: Person, nextName: string, nextRole: Role, nextEmail: string, nextPhone: string) {
     setError("");
     try {
-      await call("updateUserAccount", { uid: person.id, displayName: nextName, role: nextRole, email: nextEmail });
+      await call("updateUserAccount", { uid: person.id, displayName: nextName, role: nextRole, email: nextEmail, phone: nextPhone });
     } catch (err) {
       setError(errorText(err));
     }
@@ -507,6 +510,17 @@ export function PeopleScreen() {
         </Field>
         <Field label="Email">
           <input data-testid="people-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" />
+        </Field>
+        <Field label="Mobile">
+          <input
+            data-testid="people-phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            placeholder="(415) 555-0100"
+            onChange={(event) => setPhone(event.target.value)}
+          />
         </Field>
         <fieldset className="schemes">
           <legend>Sign-in</legend>
@@ -597,7 +611,7 @@ function PersonRow({
   person: Person;
   confirm: boolean;
   busy: boolean;
-  onSave: (person: Person, name: string, role: Role, email: string) => Promise<void>;
+  onSave: (person: Person, name: string, role: Role, email: string, phone: string) => Promise<void>;
   onAskRevoke: () => void;
   onRevoke: () => void;
   onClearEmoji: () => void;
@@ -608,6 +622,7 @@ function PersonRow({
   const session = useSession();
   const [name, setName] = useState(person.displayName);
   const [email, setEmail] = useState(person.email);
+  const [phone, setPhone] = useState(person.phone || "");
   const [role, setRole] = useState<Role>(person.role);
   const [open, setOpen] = useState(false);
   const [deleteCheck, setDeleteCheck] = useState<{ question: string; answer: string } | null>(null);
@@ -615,7 +630,8 @@ function PersonRow({
   const [deleteError, setDeleteError] = useState("");
   useEffect(() => {
     setEmail(person.email);
-  }, [person.email]);
+    setPhone(person.phone || "");
+  }, [person.email, person.phone]);
   const locked = person.protected || person.role === "super_admin";
   const manageAccounts = isSuperAdmin(session.role);
   const showClear = Boolean(person.emoji) && canClearUserEmoji(session.role, session.uid, person.id);
@@ -634,7 +650,8 @@ function PersonRow({
       {open ? (
       <div className="collapse-body stack">
       <p className="meta">
-        {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
+        {person.email}
+        {person.phone ? ` · ${person.phone}` : ""} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
         {person.active && !isAccountEnabled(person) ? " · Not enabled" : ""}
         {person.awaitingGoogle ? " · Waiting for Gmail" : ""}
@@ -688,6 +705,17 @@ function PersonRow({
             />
           </Field>
           <p className="hint">They sign in with this address. A Gmail invite follows it until they join.</p>
+          <Field label="Mobile">
+            <input
+              data-testid="person-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phone}
+              placeholder="(415) 555-0100"
+              onChange={(event) => setPhone(event.target.value)}
+            />
+          </Field>
           <Field label="Role">
             <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
               <option value="admin">Admin</option>
@@ -695,7 +723,7 @@ function PersonRow({
               <option value="care_provider">Care provider</option>
             </select>
           </Field>
-          <button type="button" data-testid="person-save" onClick={() => void onSave(person, name, role, email)}>
+          <button type="button" data-testid="person-save" onClick={() => void onSave(person, name, role, email, phone)}>
             Save
           </button>
           {confirm ? (
