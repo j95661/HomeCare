@@ -20,7 +20,7 @@ import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { VIEW_CHANGE } from "../viewAs";
 import { db } from "../firebase";
-import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
+import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, templateFromData, type ResolvedShift, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { isTodaysHandover } from "../handover";
@@ -28,7 +28,7 @@ import { homeMedicationFocus } from "../homeMed";
 import { enqueueMedAction, mergeMedicationLogs, newMedActionId, normalizeQueuedAction, useQueuedMedActions } from "../medQueue";
 import { syncMeds } from "../medSync";
 import { isReachabilityError } from "../offline";
-import { canDeleteHandover, isCareStaff } from "../roles";
+import { canDeleteHandover, canManageSchedule, isCareStaff } from "../roles";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
 
@@ -58,6 +58,8 @@ export function HomeScreen({ route, go }: Props) {
     coverageType: string;
   } | null>(null);
   const [coverageStatus, setCoverageStatus] = useState("");
+  const [roster, setRoster] = useState<{ id: string; displayName: string }[]>([]);
+  const [dayAssignee, setDayAssignee] = useState<Record<string, string>>({});
   const [readNoticeId, setReadNoticeId] = useState("");
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -217,6 +219,29 @@ export function HomeScreen({ route, go }: Props) {
   }, [meds, visibleLogs, session.onShift, session.viewingAs, session.timezone, day]);
 
   useEffect(() => {
+    if (!canManageSchedule(session.role)) {
+      setRoster([]);
+      return;
+    }
+    return onSnapshot(
+      collection(db, "users"),
+      (snap) => {
+        setRoster(
+          snap.docs
+            .filter((item) => item.get("active") !== false)
+            .map((item) => ({ id: item.id, displayName: String(item.get("displayName") || "") }))
+            .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id)),
+        );
+      },
+      (err) => {
+        if (isReachabilityError(err)) return;
+        if (isPermissionDenied(err)) session.onDenied();
+        else setError(errorText(err));
+      },
+    );
+  }, [session]);
+
+  useEffect(() => {
     if (!careNotice?.requestId) {
       setCoverageStatus("");
       return;
@@ -361,6 +386,25 @@ export function HomeScreen({ route, go }: Props) {
     } catch (err) {
       if (isPermissionDenied(err)) session.onDenied();
       else setError(errorText(err));
+    }
+  }
+
+  async function giveToday(shift: ResolvedShift, assigneeId: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    if (!assigneeId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await call("assignShiftSwap", { templateId: shift.templateId, date: shift.date, assigneeId });
+      setDayAssignee((current) => ({ ...current, [shift.id]: "" }));
+    } catch (err) {
+      if (isPermissionDenied(err)) session.onDenied();
+      else setError(errorText(err));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -542,6 +586,17 @@ export function HomeScreen({ route, go }: Props) {
               <p>
                 {formatClock(shift.start)} – {formatClock(shift.end)}
               </p>
+              {canManageSchedule(session.role) && !session.viewingAs && shift.source === "exception" && shift.kind === "swap" ? (
+                <TodaySwapAction
+                  shift={shift}
+                  weekly={templates.find((item) => item.id === shift.templateId)}
+                  roster={roster}
+                  assigneeId={dayAssignee[shift.id] || ""}
+                  busy={busy}
+                  onAssignee={(assigneeId) => setDayAssignee((current) => ({ ...current, [shift.id]: assigneeId }))}
+                  onGive={() => void giveToday(shift, dayAssignee[shift.id] || "")}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -575,6 +630,50 @@ export function HomeScreen({ route, go }: Props) {
           </button>
         </Modal>
       ) : null}
+    </div>
+  );
+}
+
+function TodaySwapAction({
+  shift,
+  weekly,
+  roster,
+  assigneeId,
+  busy,
+  onAssignee,
+  onGive,
+}: {
+  shift: ResolvedShift;
+  weekly?: ShiftTemplate;
+  roster: { id: string; displayName: string }[];
+  assigneeId: string;
+  busy: boolean;
+  onAssignee: (assigneeId: string) => void;
+  onGive: () => void;
+}) {
+  const choices = roster.filter((person) => person.id !== shift.userId);
+  if (weekly && weekly.userId !== shift.userId && !choices.some((person) => person.id === weekly.userId)) {
+    choices.unshift({ id: weekly.userId, displayName: weekly.userName });
+  }
+  const ordered = [...choices].sort(
+    (a, b) => Number(b.id === weekly?.userId) - Number(a.id === weekly?.userId) || a.displayName.localeCompare(b.displayName),
+  );
+  return (
+    <div className="stack" data-testid="today-swap-action">
+      {weekly && weekly.userId !== shift.userId ? <p className="meta">Weekly schedule: {weekly.userName}</p> : null}
+      <Field label="Give this day to">
+        <select data-testid="today-swap-with" value={assigneeId} onChange={(event) => onAssignee(event.target.value)}>
+          <option value="">Choose</option>
+          {ordered.map((person) => (
+            <option key={person.id} value={person.id}>
+              {weekly && person.id === weekly.userId ? `${person.displayName} (weekly schedule)` : person.displayName}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <button type="button" className="primary" data-testid="today-swap-save" disabled={busy || !assigneeId} onClick={onGive}>
+        Give this day
+      </button>
     </div>
   );
 }

@@ -145,6 +145,15 @@ for (const { name, api } of apis) {
           assigneeName: "Riley",
         }),
       ).toMatchObject({ write: "update", exceptionId: "ex1", fromUserId: "sam" });
+      expect(
+        api.planDirectSwap({
+          template: template(),
+          date: "2026-10-07",
+          exceptions: [exception()],
+          assigneeId: "alex",
+          assigneeName: "Alex",
+        }),
+      ).toMatchObject({ write: "delete", exceptionId: "ex1", fromUserId: "sam" });
       expect(() =>
         api.planDirectSwap({
           template: template(),
