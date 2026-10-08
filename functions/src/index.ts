@@ -52,6 +52,7 @@ import {
 import { applyAcceptance, assertCoverageApproval, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { handoverNoteDay, shouldArchiveHandover } from "./logic/handover";
 import { zonedParts } from "./logic/time";
+import { deviceActedAt, isMedAction, normalizeActionId } from "./logic/medLog";
 import { coverageMessageText, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
@@ -847,19 +848,21 @@ export const registerDevice = onCall(callable, async (request) => {
   return { registered: true };
 });
 
-const MED_ACTIONS = ["given", "declined", "missed", "snooze"] as const;
-
 export const logMedicationResponse = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
   if (!caller.onShift) {
     throw new HttpsError("failed-precondition", "Turn on shift before logging a medication.");
   }
   const body = asObject(request.data);
+  const claimedUser = String(body.userId ?? "");
+  if (claimedUser && claimedUser !== caller.uid) {
+    throw new HttpsError("permission-denied", "That medication action belongs to another account.");
+  }
   const medicationId = String(body.medicationId ?? "");
   const scheduledTime = String(body.scheduledTime ?? "");
   const action = String(body.action ?? "");
   const note = String(body.note ?? "").trim().slice(0, 500);
-  if (!MED_ACTIONS.includes(action as (typeof MED_ACTIONS)[number])) {
+  if (!isMedAction(action)) {
     throw new HttpsError("invalid-argument", "Choose given, declined, missed, or snooze.");
   }
   if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(scheduledTime)) {
@@ -872,32 +875,51 @@ export const logMedicationResponse = onCall(callable, async (request) => {
   const times = (medSnap.get("times") as string[]) || [];
   if (!times.includes(scheduledTime)) throw new HttpsError("invalid-argument", "That time is not scheduled.");
   const settings = await readSettings();
-  const day = zonedParts(new Date(), settings.timezone).date;
-  await db.collection("medicationLogs").add({
-    userId: caller.uid,
-    userName: caller.displayName,
-    medicationId,
-    medicationName: String(medSnap.get("name") || ""),
-    dose: String(medSnap.get("dose") || ""),
-    scheduledTime,
-    action,
-    note,
-    day,
-    createdAt: FieldValue.serverTimestamp(),
-  });
-  if (action === "snooze") {
-    const fireAt = new Date(Date.now() + settings.snoozeMinutes * 60 * 1000);
-    await db.collection("medicationSnoozes").add({
+  const actedAtMs = deviceActedAt(body.actedAt, Date.now());
+  const day = zonedParts(new Date(actedAtMs), settings.timezone).date;
+  const actionId = normalizeActionId(body.actionId);
+  const logId = actionId ?? db.collection("medicationLogs").doc().id;
+  const logRef = db.doc(`medicationLogs/${logId}`);
+  const snoozeRef = db.doc(`medicationSnoozes/${logId}`);
+  const actedAt = Timestamp.fromMillis(actedAtMs);
+  const medicationName = String(medSnap.get("name") || "");
+  const dose = String(medSnap.get("dose") || "");
+  const wrote = await db.runTransaction(async (tx) => {
+    const existing = await tx.get(logRef);
+    if (existing.exists) {
+      if (existing.get("userId") !== caller.uid) {
+        throw new HttpsError("already-exists", "That action id is already used.");
+      }
+      return false;
+    }
+    tx.set(logRef, {
       userId: caller.uid,
+      userName: caller.displayName,
       medicationId,
-      medicationName: String(medSnap.get("name") || ""),
-      dose: String(medSnap.get("dose") || ""),
+      medicationName,
+      dose,
       scheduledTime,
-      fireAt: Timestamp.fromDate(fireAt),
-      status: "pending",
+      action,
+      note,
+      day,
+      actedAt,
+      createdAt: actedAt,
     });
-  }
-  return { logged: true };
+    if (action === "snooze") {
+      tx.set(snoozeRef, {
+        userId: caller.uid,
+        medicationId,
+        medicationName,
+        dose,
+        scheduledTime,
+        fireAt: Timestamp.fromMillis(actedAtMs + settings.snoozeMinutes * 60 * 1000),
+        status: "pending",
+        actedAt,
+      });
+    }
+    return true;
+  });
+  return { logged: true, duplicate: !wrote };
 });
 
 async function syncScheduledShifts(date: string, time: string): Promise<void> {
