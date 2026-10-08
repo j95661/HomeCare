@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { call, errorText, isPermissionDenied } from "../api";
-import { Empty, Notice } from "../components";
+import { Empty, Field, Notice } from "../components";
 import { withEmoji } from "../emoji";
 import { db } from "../firebase";
-import { canEditWeeklyPattern } from "../roles";
+import { canEditWeeklyPattern, canManageSchedule } from "../roles";
+import { VIEW_CHANGE } from "../viewAs";
 import {
   coverageRequestLabel,
   exceptionFromData,
@@ -34,12 +35,28 @@ export function CoverageScreen() {
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [employeeId, setEmployeeId] = useState("");
+  const [shiftId, setShiftId] = useState("");
+  const [withId, setWithId] = useState("");
+  const [swapped, setSwapped] = useState("");
 
-  const mine = useMemo(
-    () =>
-      resolveRange(today, end, templates, exceptions).filter((shift) => shift.userId === session.uid && shift.templateId),
-    [today, end, templates, exceptions, session.uid],
+  const windowShifts = useMemo(
+    () => resolveRange(today, end, templates, exceptions).filter((shift) => shift.templateId),
+    [today, end, templates, exceptions],
   );
+  const mine = useMemo(
+    () => windowShifts.filter((shift) => shift.userId === session.uid),
+    [windowShifts, session.uid],
+  );
+  const roster = useMemo(
+    () => [...people].sort((a, b) => a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id)),
+    [people],
+  );
+  const employeeShifts = useMemo(
+    () => windowShifts.filter((shift) => shift.userId === employeeId),
+    [windowShifts, employeeId],
+  );
+  const selectedShift = employeeShifts.find((shift) => shift.id === shiftId) ?? null;
 
   useEffect(() => {
     const unsubs = [
@@ -72,6 +89,29 @@ export function CoverageScreen() {
 
   const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
   const shownRequests = visibleCoverageRequests(requests);
+
+  async function assignSwap() {
+    if (!selectedShift || !withId) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSwapped("");
+    try {
+      await call("assignShiftSwap", { templateId: selectedShift.templateId, date: selectedShift.date, assigneeId: withId });
+      const takenBy = roster.find((person) => person.id === withId);
+      setSwapped(`${formatDay(selectedShift.date)} now belongs to ${takenBy?.displayName || "that employee"}.`);
+      setEmployeeId("");
+      setShiftId("");
+      setWithId("");
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function requestCoverage(shift: ResolvedShift, type: CoverageKind) {
     setBusy(true);
@@ -120,9 +160,84 @@ export function CoverageScreen() {
     }
   }
 
+  const canAssign = canManageSchedule(session.role);
+
   return (
     <div className="stack">
       <h2>Swap / time off</h2>
+      {canAssign ? (
+        <section className="panel" data-testid="direct-swap">
+          <h2>Swap a shift</h2>
+          <p className="hint">This changes that one day. Employees are not asked, and no one is notified.</p>
+          <Field label="Employee">
+            <select
+              data-testid="swap-employee"
+              value={employeeId}
+              onChange={(event) => {
+                setEmployeeId(event.target.value);
+                setShiftId("");
+                setWithId("");
+                setSwapped("");
+              }}
+            >
+              <option value="">Choose</option>
+              {roster.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {withEmoji(person.displayName, person.emoji)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {employeeId ? (
+            employeeShifts.length === 0 ? (
+              <Empty>No days on that schedule in the next four weeks.</Empty>
+            ) : (
+              <Field label="Date and time">
+                <select
+                  data-testid="swap-shift"
+                  value={selectedShift ? selectedShift.id : ""}
+                  onChange={(event) => {
+                    setShiftId(event.target.value);
+                    setWithId("");
+                    setSwapped("");
+                  }}
+                >
+                  <option value="">Choose</option>
+                  {employeeShifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {formatDay(shift.date)} · {formatClock(shift.start)} – {formatClock(shift.end)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )
+          ) : null}
+          {selectedShift ? (
+            <Field label="Swap with">
+              <select data-testid="swap-with" value={withId} onChange={(event) => setWithId(event.target.value)}>
+                <option value="">Choose</option>
+                {roster
+                  .filter((person) => person.id !== selectedShift.userId)
+                  .map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {withEmoji(person.displayName, person.emoji)}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          ) : null}
+          <button
+            type="button"
+            className="primary"
+            data-testid="direct-swap-save"
+            disabled={busy || !selectedShift || !withId}
+            onClick={() => void assignSwap()}
+          >
+            Swap
+          </button>
+          {swapped ? <Notice tone="info">{swapped}</Notice> : null}
+        </section>
+      ) : null}
       <p className="hint">
         These days are yours for the next four weeks. Someone else has to accept before a swap, time off, or sick leave changes the schedule.
       </p>

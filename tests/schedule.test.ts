@@ -126,6 +126,45 @@ for (const { name, api } of apis) {
       expect(api.resolveDay("2026-10-14", [morning, afternoon], []).map((shift) => shift.id)).toEqual(["early_2026-10-14"]);
     });
 
+    it("plans a direct swap for one date and refuses the person who already has it", () => {
+      expect(
+        api.planDirectSwap({
+          template: template(),
+          date: "2026-10-07",
+          exceptions: [],
+          assigneeId: "sam",
+          assigneeName: "Sam",
+        }),
+      ).toMatchObject({ write: "create", exceptionId: "", start: "08:00", end: "16:00", fromUserId: "alex" });
+      expect(
+        api.planDirectSwap({
+          template: template(),
+          date: "2026-10-07",
+          exceptions: [exception()],
+          assigneeId: "riley",
+          assigneeName: "Riley",
+        }),
+      ).toMatchObject({ write: "update", exceptionId: "ex1", fromUserId: "sam" });
+      expect(() =>
+        api.planDirectSwap({
+          template: template(),
+          date: "2026-10-07",
+          exceptions: [],
+          assigneeId: "alex",
+          assigneeName: "Alex",
+        }),
+      ).toThrow(/already has this shift/);
+      expect(() =>
+        api.planDirectSwap({
+          template: template(),
+          date: "2026-10-08",
+          exceptions: [],
+          assigneeId: "sam",
+          assigneeName: "Sam",
+        }),
+      ).toThrow(/does not cover/);
+    });
+
     it("plans an exception write and refuses a shift that already moved", () => {
       expect(api.planCoverageWrite({ templateUserId: "alex", exceptionUserId: null, requesterId: "alex" })).toBe("create");
       expect(api.planCoverageWrite({ templateUserId: "alex", exceptionUserId: "sam", requesterId: "sam" })).toBe("update");

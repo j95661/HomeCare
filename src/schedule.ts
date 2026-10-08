@@ -244,6 +244,37 @@ export function resolveRange(start: string, end: string, templates: ShiftTemplat
   return shifts;
 }
 
+/**
+ * A lead or admin gives one dated shift to another employee.
+ * It does not edit the weekly template and does not open a request.
+ */
+export function planDirectSwap(input: {
+  template: ShiftTemplate;
+  date: string;
+  exceptions: ShiftException[];
+  assigneeId: string;
+  assigneeName: string;
+}): { write: "create" | "update"; exceptionId: string; start: string; end: string; fromUserId: string } {
+  if (!templateApplies(input.template, input.date)) {
+    throw new Error("That weekly shift does not cover this date.");
+  }
+  const assigneeName = input.assigneeName.trim();
+  if (!input.assigneeId || assigneeName.length < 1) throw new Error("Choose an employee to swap with.");
+  const resolved = resolveDay(input.date, [input.template], input.exceptions).find((shift) => shift.templateId === input.template.id);
+  if (!resolved) throw new Error("That shift was not found.");
+  if (resolved.userId === input.assigneeId) throw new Error("That employee already has this shift.");
+  const existing = input.exceptions
+    .filter((item) => item.templateId === input.template.id && item.date === input.date)
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  return {
+    write: existing ? "update" : "create",
+    exceptionId: existing?.id ?? "",
+    start: resolved.start,
+    end: resolved.end,
+    fromUserId: resolved.userId,
+  };
+}
+
 /** Accepting coverage writes one dated exception. It does not edit the weekly template. */
 export function planCoverageWrite(input: {
   templateUserId: string;

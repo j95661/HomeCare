@@ -40,6 +40,7 @@ import {
   exceptionFromData,
   isDuringShift,
   planCoverageWrite,
+  planDirectSwap,
   planShiftSync,
   promoteSwap,
   resolveDay,
@@ -1071,6 +1072,84 @@ export const dispatchMedicationReminders = onSchedule(
 function isIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
+
+export const assignShiftSwap = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  if (!canManageSchedule(caller.role)) {
+    throw new HttpsError("permission-denied", "Only a team lead or admin can swap a shift.");
+  }
+  const body = asObject(request.data);
+  const templateId = String(body.templateId ?? "");
+  const date = String(body.date ?? "");
+  const assigneeId = String(body.assigneeId ?? "");
+  if (!templateId || !isIsoDate(date) || !assigneeId) {
+    throw new HttpsError("invalid-argument", "Choose a shift and an employee.");
+  }
+  const assignee = await readProfile(assigneeId);
+  if (!assignee.active) throw new HttpsError("failed-precondition", "Choose an employee who is still on the roster.");
+  const templateRef = db.doc(`shiftTemplates/${templateId}`);
+  const templateSnap = await templateRef.get();
+  if (!templateSnap.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+  const shiftId = shiftKey(templateId, date);
+  await db.runTransaction(async (tx) => {
+    const freshTemplate = await tx.get(templateRef);
+    const freshAssignee = await tx.get(db.doc(`users/${assigneeId}`));
+    const freshExceptions = await tx.get(
+      db.collection("shiftExceptions").where("templateId", "==", templateId).where("date", "==", date),
+    );
+    const openRequests = await tx.get(
+      db.collection("shiftRequests").where("shiftId", "==", shiftId).where("status", "==", "pending"),
+    );
+    if (!freshTemplate.exists) throw new HttpsError("not-found", "That weekly shift was not found.");
+    if (!freshAssignee.exists || freshAssignee.get("active") !== true) {
+      throw new HttpsError("failed-precondition", "Choose an employee who is still on the roster.");
+    }
+    const assigneeName = String(freshAssignee.get("displayName") ?? "").trim();
+    const template = templateFromData(templateId, freshTemplate.data() as Record<string, unknown>);
+    const exceptions = freshExceptions.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>));
+    let plan: ReturnType<typeof planDirectSwap>;
+    try {
+      plan = planDirectSwap({ template, date, exceptions, assigneeId, assigneeName });
+    } catch (error) {
+      throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not swap that shift.");
+    }
+    const existing = freshExceptions.docs.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
+    if (plan.write === "update" && existing) {
+      tx.update(existing.ref, {
+        userId: assigneeId,
+        userName: assigneeName,
+        kind: "swap",
+        start: plan.start,
+        end: plan.end,
+        requestId: "",
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      tx.set(db.collection("shiftExceptions").doc(), {
+        date,
+        templateId,
+        kind: "swap",
+        userId: assigneeId,
+        userName: assigneeName,
+        start: plan.start,
+        end: plan.end,
+        requestId: "",
+        createdBy: caller.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    const at = new Date().toISOString();
+    for (const item of openRequests.docs) {
+      const history = (item.get("history") as { action: string; uid: string; name: string; at: string }[]) || [];
+      tx.update(item.ref, {
+        status: "cancelled",
+        resolvedAt: FieldValue.serverTimestamp(),
+        history: [...history, { action: "cancelled", uid: caller.uid, name: caller.displayName, at }],
+      });
+    }
+  });
+  return { swapped: true };
+});
 
 export const requestShiftCoverage = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));
