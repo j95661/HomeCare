@@ -94,6 +94,27 @@ export function groupTemplatesByPerson(templates: ShiftTemplate[]): { userId: st
     .sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
 }
 
+/** Every roster employee, including people who do not have a weekly shift yet. */
+export function repeatingShiftGroups(
+  people: { id: string; displayName: string }[],
+  templates: ShiftTemplate[],
+): { userId: string; userName: string; shifts: ShiftTemplate[] }[] {
+  const byPerson = new Map(groupTemplatesByPerson(templates).map((group) => [group.userId, group]));
+  const listed = new Set(people.map((person) => person.id));
+  const groups = people.map((person) => {
+    const existing = byPerson.get(person.id);
+    return {
+      userId: person.id,
+      userName: person.displayName || existing?.userName || "Employee",
+      shifts: existing?.shifts ?? [],
+    };
+  });
+  for (const group of byPerson.values()) {
+    if (!listed.has(group.userId)) groups.push(group);
+  }
+  return groups.sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
+}
+
 export function exceptionLabel(kind: "" | "swap" | "day_off"): string {
   if (kind === "day_off") return "Day off";
   if (kind === "swap") return "Swap";

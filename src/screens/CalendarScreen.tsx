@@ -22,8 +22,8 @@ import {
   dayExceptionLabel,
   exceptionFromData,
   exceptionLabel,
-  groupTemplatesByPerson,
   isOpenTemplate,
+  repeatingShiftGroups,
   resolveRange,
   templateFromData,
   weekdayOf,
@@ -78,8 +78,12 @@ export function CalendarScreen() {
   );
 
   const patternGroups = useMemo(
-    () => groupTemplatesByPerson(templates.filter((template) => isOpenTemplate(template, today))),
-    [templates, today],
+    () =>
+      repeatingShiftGroups(
+        people.map((person) => ({ id: person.id, displayName: person.displayName })),
+        templates.filter((template) => isOpenTemplate(template, today)),
+      ),
+    [people, templates, today],
   );
 
   useEffect(() => {
@@ -298,6 +302,7 @@ export function CalendarScreen() {
               const open = openPatternPeople.has(group.userId);
               const person = people.find((item) => item.id === group.userId);
               const dayCount = group.shifts.length;
+              const dayLabel = dayCount === 0 ? "No days" : dayCount === 1 ? "1 day" : `${dayCount} days`;
               return (
                 <li key={group.userId} className="card" data-testid="pattern-person" data-user={group.userName} data-open={open ? "true" : "false"}>
                   <button
@@ -316,11 +321,16 @@ export function CalendarScreen() {
                   >
                     <span className="collapse-title">{withEmoji(person?.displayName || group.userName, person?.emoji)}</span>
                     <span className="collapse-summary">
-                      <span>{dayCount === 1 ? "1 day" : `${dayCount} days`}</span>
+                      <span>{dayLabel}</span>
                       <span aria-hidden="true">{open ? "▾" : "▸"}</span>
                     </span>
                   </button>
-                  {open ? (
+                  {open && group.shifts.length === 0 ? (
+                    <div className="collapse-body">
+                      <Empty>No weekly shifts yet.</Empty>
+                    </div>
+                  ) : null}
+                  {open && group.shifts.length > 0 ? (
                     <ul className="list collapse-body">
                       {group.shifts.map((template) => (
                         <li key={template.id} className="card" data-testid="pattern-row" data-weekday={template.weekday}>
