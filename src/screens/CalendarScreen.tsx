@@ -22,6 +22,7 @@ import {
   dayExceptionLabel,
   exceptionFromData,
   exceptionLabel,
+  groupTemplatesByPerson,
   isOpenTemplate,
   resolveRange,
   templateFromData,
@@ -56,6 +57,7 @@ export function CalendarScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [openPatternPeople, setOpenPatternPeople] = useState<ReadonlySet<string>>(() => new Set());
   const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
   const manage = canManageSchedule(session.role);
   const today = todayISO(session.timezone);
@@ -75,11 +77,8 @@ export function CalendarScreen() {
     [range.start, range.end, templates, exceptions],
   );
 
-  const openTemplates = useMemo(
-    () =>
-      templates
-        .filter((template) => isOpenTemplate(template, today))
-        .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start) || a.userName.localeCompare(b.userName)),
+  const patternGroups = useMemo(
+    () => groupTemplatesByPerson(templates.filter((template) => isOpenTemplate(template, today))),
     [templates, today],
   );
 
@@ -291,30 +290,63 @@ export function CalendarScreen() {
         </section>
       ) : null}
       {manage ? (
-        <section className="panel">
+        <section className="panel" data-testid="repeating-shifts">
           <h2>Repeating shifts</h2>
-          {openTemplates.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
+          {patternGroups.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
           <ul className="list">
-            {openTemplates.map((template) => (
-              <li key={template.id} className="card" data-testid="pattern-row">
-                <strong>
-                  {WEEKDAY_NAMES[template.weekday] ?? "Weekday"} · {formatClock(template.start)} – {formatClock(template.end)}
-                </strong>
-                <p className="meta">{patternSpan(template)}</p>
-                <Field label="Person">
-                  <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
-                    {people.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {rosterName(person)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <button type="button" onClick={() => void removePattern(template.id)}>
-                  Remove weekly shift
-                </button>
-              </li>
-            ))}
+            {patternGroups.map((group) => {
+              const open = openPatternPeople.has(group.userId);
+              const person = people.find((item) => item.id === group.userId);
+              const dayCount = group.shifts.length;
+              return (
+                <li key={group.userId} className="card" data-testid="pattern-person" data-user={group.userName} data-open={open ? "true" : "false"}>
+                  <button
+                    type="button"
+                    className="collapse-toggle"
+                    data-testid="pattern-person-toggle"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setOpenPatternPeople((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.userId)) next.delete(group.userId);
+                        else next.add(group.userId);
+                        return next;
+                      })
+                    }
+                  >
+                    <span className="collapse-title">{withEmoji(person?.displayName || group.userName, person?.emoji)}</span>
+                    <span className="collapse-summary">
+                      <span>{dayCount === 1 ? "1 day" : `${dayCount} days`}</span>
+                      <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+                    </span>
+                  </button>
+                  {open ? (
+                    <ul className="list collapse-body">
+                      {group.shifts.map((template) => (
+                        <li key={template.id} className="card" data-testid="pattern-row" data-weekday={template.weekday}>
+                          <strong>
+                            {WEEKDAY_NAMES[template.weekday] ?? "Weekday"} · {formatClock(template.start)} – {formatClock(template.end)}
+                          </strong>
+                          <p className="meta">{patternSpan(template)}</p>
+                          <Field label="Person">
+                            <select value={template.userId} onChange={(event) => void changePerson(template, event.target.value)}>
+                              {people.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {rosterName(item)}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <button type="button" onClick={() => void removePattern(template.id)}>
+                            Remove weekly shift
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
