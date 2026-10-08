@@ -18,7 +18,7 @@ export function canManageMeds(role: Role): boolean {
 }
 
 export function canManageGuides(role: Role): boolean {
-  return canManageMeds(role);
+  return role === "super_admin" || role === "admin" || role === "team_lead";
 }
 
 export function canManageSchedule(role: Role): boolean {

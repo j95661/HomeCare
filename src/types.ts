@@ -115,6 +115,7 @@ export type Guide = {
   id: string;
   title: string;
   summary: string;
+  period: "" | "morning" | "afternoon" | "evening";
   steps: GuideStep[];
 };
 

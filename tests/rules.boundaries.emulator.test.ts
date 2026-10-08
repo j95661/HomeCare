@@ -194,17 +194,27 @@ describe("notes, guides, and threads", () => {
     await assertFails(deleteDoc(doc(dbFor("lead"), "handoverNotes/n1")));
   });
 
-  it("lets a team lead read a guide and blocks them from editing or removing it", async () => {
+  it("lets a team lead assign a guide to part of the day and keeps removal with an admin", async () => {
     const guide = {
       title: "Shower",
       summary: "Evening",
+      period: "evening",
       steps: [{ title: "Towel", detail: "Warm it" }],
       updatedBy: "admin",
       updatedAt: serverTimestamp(),
     };
     await assertSucceeds(setDoc(doc(dbFor("admin"), "guides/shower"), guide));
     await assertSucceeds(getDoc(doc(dbFor("lead"), "guides/shower")));
-    await assertFails(updateDoc(doc(dbFor("lead"), "guides/shower"), { title: "Bath" }));
+    await assertSucceeds(
+      updateDoc(doc(dbFor("lead"), "guides/shower"), {
+        ...guide,
+        title: "Bath",
+        period: "morning",
+        updatedBy: "lead",
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(setDoc(doc(dbFor("lead"), "guides/bad"), { ...guide, period: "night", updatedBy: "lead" }));
     await assertFails(deleteDoc(doc(dbFor("lead"), "guides/shower")));
     await assertSucceeds(deleteDoc(doc(dbFor("super"), "guides/shower")));
   });

@@ -199,6 +199,7 @@ describe("security rules", () => {
     const guide = {
       title: "Shower",
       summary: "Evening",
+      period: "evening",
       steps: [{ title: "Towel", detail: "Warm it" }],
       updatedBy: "admin",
       updatedAt: serverTimestamp(),
