@@ -212,7 +212,7 @@ export function planDirectSwap(input: {
   exceptions: ShiftException[];
   assigneeId: string;
   assigneeName: string;
-}): { write: "create" | "update"; exceptionId: string; start: string; end: string; fromUserId: string } {
+}): { write: "create" | "update" | "delete"; exceptionId: string; start: string; end: string; fromUserId: string } {
   if (!templateApplies(input.template, input.date)) {
     throw new Error("That weekly shift does not cover this date.");
   }
@@ -225,7 +225,7 @@ export function planDirectSwap(input: {
     .filter((item) => item.templateId === input.template.id && item.date === input.date)
     .sort((a, b) => a.id.localeCompare(b.id))[0];
   return {
-    write: existing ? "update" : "create",
+    write: existing && input.assigneeId === input.template.userId ? "delete" : existing ? "update" : "create",
     exceptionId: existing?.id ?? "",
     start: resolved.start,
     end: resolved.end,

@@ -1184,7 +1184,9 @@ export const assignShiftSwap = onCall(callable, async (request) => {
       throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Could not swap that shift.");
     }
     const existing = freshExceptions.docs.slice().sort((a, b) => a.id.localeCompare(b.id))[0];
-    if (plan.write === "update" && existing) {
+    if (plan.write === "delete") {
+      for (const item of freshExceptions.docs) tx.delete(item.ref);
+    } else if (plan.write === "update" && existing) {
       tx.update(existing.ref, {
         userId: assigneeId,
         userName: assigneeName,
