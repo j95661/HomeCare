@@ -273,6 +273,8 @@ button.person-choice { display: grid; justify-items: start; gap: 2px; }
 .view-as p { margin: 0; font-weight: 700; }
 .notice.error, .notice[role="alert"] { border-color: var(--warn); color: var(--warn); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.split.pattern-time-row { align-items: center; }
+.split.pattern-time-row > p { margin: 0; }
 .split.thirds { grid-template-columns: 1fr 1fr 1fr; }
 .times { display: flex; flex-wrap: wrap; gap: 8px; }
 .times button { width: auto; min-width: 108px; }
