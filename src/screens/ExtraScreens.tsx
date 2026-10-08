@@ -502,13 +502,18 @@ export function PeopleScreen() {
     }
   }
 
-  if (!canManageMeds(session.role)) return <Notice>Only an admin can clear an emoji.</Notice>;
+  const managePeople = canManageMeds(session.role);
+  if (!managePeople && !session.canSwitchView) return <Notice>Only an admin can clear an emoji.</Notice>;
   const manageAccounts = isSuperAdmin(session.role);
 
   return (
     <div className="stack">
       <h2>People</h2>
-      {manageAccounts ? null : <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>}
+      {manageAccounts ? null : managePeople ? (
+        <p className="hint">Clear a teammate's emoji if it should come off their name. They can pick a new one.</p>
+      ) : (
+        <p className="hint">Choose an employee. Swap and time off use that account.</p>
+      )}
       {manageAccounts ? (
       <CollapseSection
         title="Add person"
@@ -684,7 +689,7 @@ function PersonRow({
             })
           }
         >
-          See their view
+          Act as this employee
         </button>
       ) : null}
       {manageAccounts && person.active && !isAccountEnabled(person) ? (
@@ -1290,7 +1295,7 @@ export function MoreScreen({ go, onSignOut }: { go: (patch: Partial<RouteState>)
     { view: "activities", label: "Activities", show: true },
     { view: "guides", label: "Guides", show: true },
     { view: "medlog", label: "Med log", show: canReviewLogs(session.role) },
-    { view: "people", label: "People", show: canManageMeds(session.role) },
+    { view: "people", label: "People", show: canManageMeds(session.role) || session.canSwitchView },
     { view: "settings", label: "Settings", show: isSuperAdmin(session.role) },
   ];
 

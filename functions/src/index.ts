@@ -1,6 +1,6 @@
 import { createHash, randomInt } from "crypto";
 import { logger } from "firebase-functions";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
@@ -24,7 +24,7 @@ import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
-import { canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnabled, isRole, type Role } from "./logic/roles";
+import { canActAsEmployee, canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnabled, isRole, type Role } from "./logic/roles";
 import {
   adminRecipients,
   careTeamRecipients,
@@ -1201,8 +1201,18 @@ export const assignShiftSwap = onCall(callable, async (request) => {
   return { swapped: true };
 });
 
-export const requestShiftCoverage = onCall(callable, async (request) => {
+async function coverageActor(request: CallableRequest) {
   const caller = await requireReadyUser(requireAuth(request));
+  const asUid = String(asObject(request.data).asUid ?? "").trim();
+  if (!asUid || asUid === caller.uid) return caller;
+  if (!canActAsEmployee(caller.role)) {
+    throw new HttpsError("permission-denied", "Only an admin can act as another employee.");
+  }
+  return requireReadyUser(asUid);
+}
+
+export const requestShiftCoverage = onCall(callable, async (request) => {
+  const caller = await coverageActor(request);
   const body = asObject(request.data);
   const templateId = String(body.templateId ?? "");
   const date = String(body.date ?? "");
@@ -1297,7 +1307,7 @@ async function loadRequest(id: string): Promise<LoadedRequest> {
 }
 
 export const acceptShiftRequest = onCall(callable, async (request) => {
-  const caller = await requireReadyUser(requireAuth(request));
+  const caller = await coverageActor(request);
   const id = String(asObject(request.data).id ?? "");
   if (!id) throw new HttpsError("invalid-argument", "Choose a request.");
   const current = await loadRequest(id);
@@ -1446,7 +1456,7 @@ export const makeWeeklyPattern = onCall(callable, async (request) => {
 });
 
 export const cancelShiftRequest = onCall(callable, async (request) => {
-  const caller = await requireReadyUser(requireAuth(request));
+  const caller = await coverageActor(request);
   const id = String(asObject(request.data).id ?? "");
   const current = await loadRequest(id);
   if (current.status !== "pending" && current.status !== "awaiting_admin") {

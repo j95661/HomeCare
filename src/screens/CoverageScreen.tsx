@@ -157,10 +157,6 @@ export function CoverageScreen() {
   }
 
   async function accept(id: string) {
-    if (session.viewingAs) {
-      setError(VIEW_CHANGE);
-      return;
-    }
     setBusy(true);
     setError("");
     try {

@@ -59,6 +59,11 @@ export function canApproveTimeOff(role: Role): boolean {
   return role === "super_admin" || role === "admin";
 }
 
+/** An admin can use another employee's account while testing swap and time off. */
+export function canActAsEmployee(role: Role): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
 /** Anyone on the roster can write in the care team thread. */
 export function canPostToCareTeam(role: Role): boolean {
   return role === "super_admin" || role === "admin" || role === "team_lead" || role === "care_provider";

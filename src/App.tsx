@@ -27,7 +27,7 @@ import { SessionProvider, type SessionValue } from "./session";
 import { nameMark } from "./emoji";
 import { groupSeenKey, nextMessageAlert } from "./messagesAlert";
 import { canManageSchedule, roleLabel } from "./roles";
-import { canViewAsEmployee, displaySession, isViewRole, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
+import { canViewAsEmployee, displaySession, isViewRole, setActingUid, setViewOnly, VIEW_CHANGE, type ViewIdentity } from "./viewAs";
 import { exceptionFromData, isDuringShift, planShiftSync, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "./schedule";
 import { useAccountBackground } from "./background";
 import { applyTheme, DEFAULT_COLOR_SCHEME, resolveColorScheme } from "./themes";
@@ -214,7 +214,11 @@ export function App() {
 
   useEffect(() => {
     setViewOnly(Boolean(viewPerson));
-    return () => setViewOnly(false);
+    setActingUid(viewPerson?.uid ?? "");
+    return () => {
+      setViewOnly(false);
+      setActingUid("");
+    };
   }, [viewPerson]);
 
   const viewerId = viewPerson?.uid || (gate.kind === "app" ? gate.session.uid : "");
@@ -714,12 +718,12 @@ export function App() {
         {gate.kind === "app" && sessionValue ? (
           <SessionProvider value={sessionValue}>
             {viewPerson ? (
-              <div className="view-as" data-testid="view-as-banner">
-                <p>Viewing as {viewPerson.displayName}</p>
-                <button type="button" data-testid="view-as-back" onClick={switchBack}>
-                  Switch back
-                </button>
-              </div>
+              <ActingAsBar
+                person={viewPerson}
+                selfId={gate.session.uid}
+                onSwitch={switchTo}
+                onBack={switchBack}
+              />
             ) : null}
             {shiftError ? <Notice>{shiftError}</Notice> : null}
             {route.view !== "home" && route.view !== "calendar" && route.view !== "messages" && route.view !== "more" ? (
@@ -774,6 +778,67 @@ function prefersGoogleRedirect(): boolean {
     window.matchMedia("(display-mode: standalone)").matches ||
     ("standalone" in navigator && (navigator as { standalone?: boolean }).standalone === true);
   return mobile || standalone;
+}
+
+function ActingAsBar({
+  person,
+  selfId,
+  onSwitch,
+  onBack,
+}: {
+  person: ViewIdentity;
+  selfId: string;
+  onSwitch: (person: ViewIdentity) => void;
+  onBack: () => void;
+}) {
+  const [people, setPeople] = useState<ViewIdentity[]>([]);
+  useEffect(() => {
+    return onSnapshot(collection(db, "users"), (snap) => {
+      setPeople(
+        snap.docs
+          .filter((item) => item.get("active") === true && isViewRole(item.get("role")))
+          .map((item) => ({
+            uid: item.id,
+            displayName: String(item.get("displayName") || "Employee"),
+            role: item.get("role") as Role,
+            emoji: String(item.get("emoji") || ""),
+            onShift: item.get("onShift") === true,
+            colorScheme: String(item.get("colorScheme") || ""),
+          }))
+          .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.uid.localeCompare(b.uid)),
+      );
+    });
+  }, []);
+  const listed = people.some((item) => item.uid === person.uid) ? people : [person, ...people];
+  return (
+    <div className="view-as" data-testid="view-as-banner">
+      <p>Acting as {person.displayName}. Swap and time off use this account.</p>
+      <Field label="Switch employee">
+        <select
+          data-testid="act-as"
+          value={person.uid}
+          onChange={(event) => {
+            const picked = listed.find((item) => item.uid === event.target.value);
+            if (!picked || picked.uid === person.uid) return;
+            if (picked.uid === selfId) {
+              onBack();
+              return;
+            }
+            onSwitch(picked);
+          }}
+        >
+          {listed.map((item) => (
+            <option key={item.uid} value={item.uid}>
+              {item.uid === selfId ? `${item.displayName} (you)` : item.displayName}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <button type="button" data-testid="view-as-back" onClick={onBack}>
+        Switch back
+      </button>
+    </div>
+  );
 }
 
 function LoginScreen({ notice }: { notice?: string }) {

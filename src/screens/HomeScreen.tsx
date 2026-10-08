@@ -230,10 +230,6 @@ export function HomeScreen({ route, go }: Props) {
 
   async function acceptNotice() {
     if (!careNotice?.requestId) return;
-    if (session.viewingAs) {
-      setError(VIEW_CHANGE);
-      return;
-    }
     setBusy(true);
     setError("");
     try {
