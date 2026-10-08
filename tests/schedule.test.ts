@@ -47,6 +47,28 @@ describe("repeating shifts by person", () => {
     expect(groups[0].shifts.map((shift) => shift.weekday)).toEqual([1, 3]);
     expect(groups[1].shifts.map((shift) => shift.id)).toEqual(["sam-fri"]);
   });
+
+  it("keeps employees who have no weekly shift on the list", () => {
+    const groups = client.repeatingShiftGroups(
+      [
+        { id: "michelle", displayName: "Michelle" },
+        { id: "zoe", displayName: "Zoe" },
+      ],
+      [template({ id: "zoe-wed", userId: "zoe", userName: "Zoe", weekday: 3, start: "16:30", end: "20:30" })],
+    );
+    expect(groups.map((group) => [group.userName, group.shifts.length])).toEqual([
+      ["Michelle", 0],
+      ["Zoe", 1],
+    ]);
+    expect(groups[1].shifts[0].id).toBe("zoe-wed");
+  });
+
+  it("keeps a weekly shift whose person is no longer on the roster", () => {
+    const groups = client.repeatingShiftGroups([], [template({ userId: "former", userName: "Former" })]);
+    expect(groups).toEqual([
+      expect.objectContaining({ userId: "former", userName: "Former", shifts: [expect.objectContaining({ id: "alex-wed" })] }),
+    ]);
+  });
 });
 
 for (const { name, api } of apis) {
