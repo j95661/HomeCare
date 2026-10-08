@@ -53,6 +53,7 @@ export function HomeScreen({ route, go }: Props) {
   } | null>(null);
   const [readNoticeId, setReadNoticeId] = useState("");
   const [noticeOpen, setNoticeOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const noticeHide = useRef("");
   const [body, setBody] = useState("");
   const picture = usePictureDraft();
@@ -315,58 +316,76 @@ export function HomeScreen({ route, go }: Props) {
         {noticeOpen && !careNotice ? <p className="empty">No notice.</p> : null}
       </section>
 
-      <section className="panel attach">
-        <h2>Handover notes</h2>
-        <p className="hint">Today's notes. Earlier days stay saved for a later review.</p>
-        <Field label="What happened this shift?">
-          <textarea
-            data-testid="handover-body"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            onPaste={picture.onPaste}
-            rows={3}
-            maxLength={4000}
-            autoCorrect="on"
-            autoCapitalize="sentences"
-          />
-        </Field>
-        <PictureControls
-          testId="handover-picture"
-          inputRef={picture.inputRef}
-          preview={picture.preview}
-          onChoose={picture.choose}
-          onClear={picture.clear}
-        />
-        <div className="send-row note-row">
-          <PictureButton testId="handover-picture" onOpen={() => picture.inputRef.current?.click()} />
-          <button
-            type="button"
-            className="primary"
-            data-testid="handover-submit"
-            disabled={busy || (!body.trim() && !picture.file)}
-            onClick={() => void postNote()}
-          >
-            Post note
-          </button>
-        </div>
-        {todayNotes.length === 0 ? <Empty>No notes yet today.</Empty> : null}
-        <ul className="list">
-          {todayNotes.map((note, index) => (
-            <li key={note.id} className={index === 0 ? "card pinned" : "card"} data-testid="handover-note">
-              {index === 0 ? <span className="badge">Pinned</span> : null}
-              {note.body ? <p className="message-body">{note.body}</p> : null}
-              {note.imagePath ? <CareImage path={note.imagePath} /> : null}
-              <p className="meta">
-                {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
-              </p>
-              {canDeleteNote ? (
-                <button type="button" data-testid="handover-delete" onClick={() => void removeNote(note.id)}>
-                  Delete
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+      <section className="panel attach" data-testid="handover" data-open={notesOpen ? "true" : "false"}>
+        <button
+          type="button"
+          className="collapse-toggle"
+          data-testid="handover-toggle"
+          aria-expanded={notesOpen}
+          onClick={() => setNotesOpen((open) => !open)}
+        >
+          <span className="collapse-title handover-title">Handover notes</span>
+          <span className="collapse-summary">
+            <span className="notice-summary">
+              {todayNotes[0] ? messagePreview(todayNotes[0].body, Boolean(todayNotes[0].imagePath)) : "No notes yet today."}
+            </span>
+            <span aria-hidden="true">{notesOpen ? "▾" : "▸"}</span>
+          </span>
+        </button>
+        {notesOpen ? (
+          <div className="collapse-body" data-testid="handover-panel">
+            <p className="hint">Today's notes. Earlier days stay saved for a later review.</p>
+            <Field label="What happened this shift?">
+              <textarea
+                data-testid="handover-body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                onPaste={picture.onPaste}
+                rows={3}
+                maxLength={4000}
+                autoCorrect="on"
+                autoCapitalize="sentences"
+              />
+            </Field>
+            <PictureControls
+              testId="handover-picture"
+              inputRef={picture.inputRef}
+              preview={picture.preview}
+              onChoose={picture.choose}
+              onClear={picture.clear}
+            />
+            <div className="send-row note-row">
+              <PictureButton testId="handover-picture" onOpen={() => picture.inputRef.current?.click()} />
+              <button
+                type="button"
+                className="primary"
+                data-testid="handover-submit"
+                disabled={busy || (!body.trim() && !picture.file)}
+                onClick={() => void postNote()}
+              >
+                Post note
+              </button>
+            </div>
+            {todayNotes.length === 0 ? <Empty>No notes yet today.</Empty> : null}
+            <ul className="list">
+              {todayNotes.map((note, index) => (
+                <li key={note.id} className={index === 0 ? "card pinned" : "card"} data-testid="handover-note">
+                  {index === 0 ? <span className="badge">Pinned</span> : null}
+                  {note.body ? <p className="message-body">{note.body}</p> : null}
+                  {note.imagePath ? <CareImage path={note.imagePath} /> : null}
+                  <p className="meta">
+                    {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
+                  </p>
+                  {canDeleteNote ? (
+                    <button type="button" data-testid="handover-delete" onClick={() => void removeNote(note.id)}>
+                      Delete
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="panel" data-testid="todo">
