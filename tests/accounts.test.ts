@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { assertCanAssign, assertCanEdit, AuthzError, deleteAccount, revokeAccount, type AccountProfile } from "../functions/src/logic/accounts";
+import {
+  assertCanAssign,
+  assertCanEdit,
+  AuthzError,
+  deleteAccount,
+  planEmailUpdate,
+  revokeAccount,
+  type AccountProfile,
+} from "../functions/src/logic/accounts";
 
 function profile(partial: Partial<AccountProfile> & Pick<AccountProfile, "uid" | "role">): AccountProfile {
   return {
@@ -144,5 +152,79 @@ describe("account assignment", () => {
       ),
     ).toThrow(/Only the super admin/);
     expect(() => assertCanEdit(profile({ uid: "super", role: "super_admin", otpVerified: false }), superAdmin, null)).toThrow(/not active/);
+  });
+});
+
+describe("employee email updates", () => {
+  it("keeps an unchanged address and accepts a new one for an email-code account", () => {
+    expect(
+      planEmailUpdate({
+        currentEmail: "Alex@Example.com",
+        nextEmail: " alex@example.com ",
+        signIn: "email_otp",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }),
+    ).toEqual({ email: "alex@example.com", changed: false, clearVerification: false });
+    expect(
+      planEmailUpdate({
+        currentEmail: "alex@example.com",
+        nextEmail: "Alex.New@Example.com",
+        signIn: "email_otp",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }),
+    ).toEqual({ email: "alex.new@example.com", changed: true, clearVerification: true });
+  });
+
+  it("updates Gmail and password addresses without asking for an email code", () => {
+    expect(
+      planEmailUpdate({
+        currentEmail: "sam@example.com",
+        nextEmail: "sam.new@example.com",
+        signIn: "google",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }).clearVerification,
+    ).toBe(false);
+    expect(
+      planEmailUpdate({
+        currentEmail: "pat@example.com",
+        nextEmail: "pat.new@example.com",
+        signIn: "password",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }).clearVerification,
+    ).toBe(false);
+  });
+
+  it("refuses the super admin address and a reserved or invalid replacement", () => {
+    expect(() =>
+      planEmailUpdate({
+        currentEmail: "super@example.com",
+        nextEmail: "other@example.com",
+        signIn: "password",
+        protectedAccount: true,
+        superAdminEmail: "super@example.com",
+      }),
+    ).toThrow(/cannot be changed/);
+    expect(() =>
+      planEmailUpdate({
+        currentEmail: "pat@example.com",
+        nextEmail: "Super@Example.com",
+        signIn: "google",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }),
+    ).toThrow(/reserved/);
+    expect(() =>
+      planEmailUpdate({
+        currentEmail: "pat@example.com",
+        nextEmail: "not-an-email",
+        signIn: "email_otp",
+        protectedAccount: false,
+        superAdminEmail: "super@example.com",
+      }),
+    ).toThrow(/valid email/);
   });
 });

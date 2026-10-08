@@ -1,4 +1,5 @@
 import { canAssignRole, canRevoke, isProtectedAccount, type Role } from "./roles";
+import type { SignInMethod } from "./signin";
 
 export class AuthzError extends Error {
   constructor(message: string) {
@@ -74,6 +75,35 @@ export function assertCanAssign(caller: AccountProfile, nextRole: Role, targetEm
   if (targetEmail.toLowerCase() === superAdminEmail.toLowerCase()) {
     throw new AuthzError("That email is reserved for the super admin.");
   }
+}
+
+export function isAccountEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200;
+}
+
+export type EmailUpdatePlan = {
+  email: string;
+  changed: boolean;
+  clearVerification: boolean;
+};
+
+/** A changed address is saved on the profile. Email-code accounts must verify the new inbox. */
+export function planEmailUpdate(input: {
+  currentEmail: string;
+  nextEmail: string;
+  signIn: SignInMethod;
+  protectedAccount: boolean;
+  superAdminEmail: string;
+}): EmailUpdatePlan {
+  const email = input.nextEmail.trim().toLowerCase();
+  const current = input.currentEmail.trim().toLowerCase();
+  if (email === current) return { email: current, changed: false, clearVerification: false };
+  if (input.protectedAccount) throw new AuthzError("The super admin email cannot be changed.");
+  if (!isAccountEmail(email)) throw new AuthzError("Enter a valid email.");
+  if (email === input.superAdminEmail.trim().toLowerCase()) {
+    throw new AuthzError("That email is reserved for the super admin.");
+  }
+  return { email, changed: true, clearVerification: input.signIn === "email_otp" };
 }
 
 export function assertCanEdit(
