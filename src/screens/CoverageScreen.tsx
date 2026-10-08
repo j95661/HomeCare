@@ -10,6 +10,7 @@ import {
   coverageRequestLabel,
   exceptionFromData,
   exceptionLabel,
+  isAwayKind,
   resolveRange,
   templateFromData,
   visibleCoverageRequests,
@@ -87,7 +88,9 @@ export function CoverageScreen() {
     return () => unsubs.forEach((unsub) => unsub());
   }, [today, end, session]);
 
-  const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
+  const pendingByShift = new Map(
+    requests.filter((item) => item.status === "pending").map((item) => [item.shiftId, item.type]),
+  );
   const shownRequests = visibleCoverageRequests(requests);
 
   async function assignSwap() {
@@ -126,6 +129,10 @@ export function CoverageScreen() {
   }
 
   async function accept(id: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -239,12 +246,13 @@ export function CoverageScreen() {
         </section>
       ) : null}
       <p className="hint">
-        These days are yours for the next four weeks. Someone else has to accept before a swap, time off, or sick leave changes the schedule.
+        These days are yours for the next four weeks. A swap waits for someone else to accept it. Time off and sick leave wait for a super admin, admin, or team lead to approve.
       </p>
       {mine.length === 0 ? <Empty>No days on your schedule in the next four weeks.</Empty> : null}
       <ul className="list">
         {mine.map((shift) => {
-          const pending = pendingIds.has(shift.id);
+          const pendingType = pendingByShift.get(shift.id);
+          const pending = pendingType !== undefined;
           return (
             <li key={shift.id} className="card" data-testid="coverage-day" data-date={shift.date} data-pending={pending ? "true" : "false"}>
               {shift.source === "exception" ? (
@@ -256,7 +264,13 @@ export function CoverageScreen() {
               <p>
                 {formatClock(shift.start)} – {formatClock(shift.end)}
               </p>
-              {pending ? <p className="meta">A request is already open for this day.</p> : null}
+              {pending ? (
+                <p className="meta" data-testid="coverage-waiting">
+                  {isAwayKind(pendingType)
+                    ? "Waiting for a super admin, admin, or team lead to approve."
+                    : "Waiting for someone else to accept this swap."}
+                </p>
+              ) : null}
               <div className="stack">
                 <button
                   type="button"
@@ -312,9 +326,15 @@ export function CoverageScreen() {
                   </li>
                 ))}
               </ul>
-              {item.status === "pending" && item.requesterId !== session.uid ? (
-                <button type="button" className="primary" data-testid="accept-coverage" disabled={busy} onClick={() => void accept(item.id)}>
-                  Accept
+              {item.status === "pending" && item.requesterId !== session.uid && (!isAwayKind(item.type) || canAssign) ? (
+                <button
+                  type="button"
+                  className="primary"
+                  data-testid={isAwayKind(item.type) ? "approve-coverage" : "accept-coverage"}
+                  disabled={busy}
+                  onClick={() => void accept(item.id)}
+                >
+                  {isAwayKind(item.type) ? "Approve" : "Accept"}
                 </button>
               ) : null}
               {item.status === "pending" && item.requesterId === session.uid ? (

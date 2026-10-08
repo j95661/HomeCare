@@ -33,12 +33,12 @@ function formatClock(hhmm: string): string {
 
 function coveragePhrase(notice: CoverageNotice): string {
   if (notice.type === "day_off") {
-    if (notice.action === "accepted") return "Took the time off";
+    if (notice.action === "accepted") return "Approved the time off";
     if (notice.action === "cancelled") return "Cancelled the time off";
     return "Requested time off";
   }
   if (notice.type === "sick_leave") {
-    if (notice.action === "accepted") return "Took the sick leave";
+    if (notice.action === "accepted") return "Approved the sick leave";
     if (notice.action === "cancelled") return "Cancelled the sick leave";
     return "Requested sick leave";
   }
