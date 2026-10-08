@@ -263,18 +263,46 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function ownedImage(path, folder) {
+      return path is string
+        && path.matches('^' + folder + request.auth.uid + '/[A-Za-z0-9._-]{1,80}$');
+    }
+
+    function validHandover(data) {
+      let textOnly = data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt'])
+        && data.body.size() > 0;
+      let withImage = data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'imagePath'])
+        && ownedImage(data.imagePath, 'handover/');
+      return data.body is string
+        && data.body.size() <= 4000
+        && data.authorId == request.auth.uid
+        && data.authorName is string
+        && data.authorName.size() > 0
+        && data.authorName.size() <= 80
+        && data.createdAt == request.time
+        && (textOnly || withImage);
+    }
+
+    function validChatMessage(data, imageFolder) {
+      let textOnly = data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt'])
+        && data.text.size() > 0
+        && data.text.matches('.*\\S.*');
+      let withImage = data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt', 'imagePath'])
+        && ownedImage(data.imagePath, imageFolder)
+        && (data.text.size() == 0 || data.text.matches('.*\\S.*'));
+      return data.senderId == request.auth.uid
+        && data.senderName is string
+        && data.senderName.size() > 0
+        && data.senderName.size() <= 80
+        && data.text is string
+        && data.text.size() <= 2000
+        && data.createdAt == request.time
+        && (textOnly || withImage);
+    }
+
     match /handoverNotes/{id} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser()
-        && request.resource.data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt'])
-        && request.resource.data.body is string
-        && request.resource.data.body.size() > 0
-        && request.resource.data.body.size() <= 4000
-        && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.authorName is string
-        && request.resource.data.authorName.size() > 0
-        && request.resource.data.authorName.size() <= 80
-        && request.resource.data.createdAt == request.time;
+      allow create: if isActiveUser() && validHandover(request.resource.data);
       allow update: if false;
       allow delete: if isAdmin();
     }
@@ -315,16 +343,7 @@ service cloud.firestore {
         allow read: if isActiveUser() && docId == 'main';
         allow create: if isCareStaff()
           && docId == 'main'
-          && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt'])
-          && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.senderName is string
-          && request.resource.data.senderName.size() > 0
-          && request.resource.data.senderName.size() <= 80
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000
-          && request.resource.data.text.matches('.*\\S.*')
-          && request.resource.data.createdAt == request.time;
+          && validChatMessage(request.resource.data, 'messages/group/');
         allow update, delete: if false;
       }
     }
@@ -378,16 +397,7 @@ service cloud.firestore {
         allow create: if isActiveUser()
           && threadData().type == 'direct'
           && request.auth.uid in threadData().participantIds
-          && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt'])
-          && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.senderName is string
-          && request.resource.data.senderName.size() > 0
-          && request.resource.data.senderName.size() <= 80
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000
-          && request.resource.data.text.matches('.*\\S.*')
-          && request.resource.data.createdAt == request.time;
+          && validChatMessage(request.resource.data, 'messages/' + threadId + '/');
         allow update, delete: if false;
       }
     }

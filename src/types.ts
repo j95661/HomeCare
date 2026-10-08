@@ -99,6 +99,7 @@ export type Handover = {
   body: string;
   authorId: string;
   authorName: string;
+  imagePath?: string;
   createdAt?: { toDate: () => Date };
 };
 
@@ -138,5 +139,6 @@ export type ChatMessage = {
   senderId: string;
   senderName: string;
   text: string;
+  imagePath?: string;
   createdAt?: { toDate: () => Date };
 };

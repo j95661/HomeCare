@@ -9,6 +9,7 @@ import {
   persistentLocalCache,
 } from "firebase/firestore";
 import { getMessaging, type Messaging } from "firebase/messaging";
+import { connectStorageEmulator, getStorage } from "firebase/storage";
 
 const app = initializeApp({
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -35,11 +36,13 @@ function createDb() {
 }
 
 export const db = createDb();
+export const storage = getStorage(app);
 
 if (useEmulators) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
   connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  connectStorageEmulator(storage, "127.0.0.1", 9199);
 }
 
 export function messagingOrNull(): Messaging | null {

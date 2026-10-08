@@ -372,19 +372,53 @@ input[type="color"] {
   display: grid;
   gap: 10px;
 }
-.composer { display: grid; gap: 8px; }
+.composer { display: grid; gap: 8px; position: relative; }
+.attach { position: relative; }
 .send-row {
   display: grid;
   grid-template-columns: 52px 1fr;
   gap: 8px;
 }
-button.emoji-toggle {
+.send-row.with-picture { grid-template-columns: 52px 52px 1fr; }
+.send-row.note-row { grid-template-columns: 52px 1fr; }
+button.emoji-toggle,
+button.picture-toggle {
   width: 52px;
   min-height: 52px;
   padding: 0;
   font-size: 1.45rem;
   font-weight: 400;
   line-height: 1;
+}
+.picture-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.picture-preview {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.picture-preview img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+.care-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 16px;
+  margin: 8px 0;
 }
 .message-body {
   margin: 6px 0;
