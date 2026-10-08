@@ -276,7 +276,7 @@ export function MessagesScreen({ thread, go }: Props) {
         <ul className="list">
           {directs.map((item) => (
             <li key={item.id}>
-              <button type="button" onClick={() => go({ view: "messages", thread: item.id })}>
+              <button type="button" className="person-choice" onClick={() => go({ view: "messages", thread: item.id })}>
                 <strong>{labelFor(item.participantIds)}</strong>
                 <span className="meta">{item.lastMessageText || "No messages yet"}</span>
               </button>
