@@ -69,6 +69,11 @@ export function isAccountEnabled(user: { enabled?: boolean | null }): boolean {
   return user.enabled !== false;
 }
 
+/** Admins and team leads can remove a handover note from today's list. */
+export function canDeleteHandover(role: Role): boolean {
+  return role === "super_admin" || role === "admin" || role === "team_lead";
+}
+
 /** The author can delete their own message. An admin can delete any message they can open. */
 export function canDeleteMessage(role: Role, callerUid: string, senderId: string): boolean {
   if (!senderId || !callerUid) return false;

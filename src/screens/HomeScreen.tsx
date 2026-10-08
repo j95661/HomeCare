@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   limit,
   onSnapshot,
@@ -22,7 +23,9 @@ import { db } from "../firebase";
 import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, templateFromData, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
+import { isTodaysHandover } from "../handover";
 import { homeMedicationFocus } from "../homeMed";
+import { canDeleteHandover } from "../roles";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
 
@@ -101,7 +104,7 @@ export function HomeScreen({ route, go }: Props) {
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
-        query(collection(db, "handoverNotes"), orderBy("createdAt", "desc"), limit(5)),
+        query(collection(db, "handoverNotes"), orderBy("createdAt", "desc"), limit(40)),
         (snap) => setNotes(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Handover, "id">) }))),
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
@@ -210,12 +213,14 @@ export function HomeScreen({ route, go }: Props) {
         authorId: string;
         authorName: string;
         createdAt: ReturnType<typeof serverTimestamp>;
+        day: string;
         imagePath?: string;
       } = {
         body: text,
         authorId: session.uid,
         authorName: session.displayName,
         createdAt: serverTimestamp(),
+        day,
       };
       if (picture.file) {
         const path = careImagePath(`handover/${session.uid}`, picture.file);
@@ -251,6 +256,23 @@ export function HomeScreen({ route, go }: Props) {
       setError(errorText(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  const todayNotes = notes.filter((note) => isTodaysHandover(note, day, session.timezone));
+  const canDeleteNote = canDeleteHandover(session.role);
+
+  async function removeNote(id: string) {
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    setError("");
+    try {
+      await deleteDoc(doc(db, "handoverNotes", id));
+    } catch (err) {
+      if (isPermissionDenied(err)) session.onDenied();
+      else setError(errorText(err));
     }
   }
 
@@ -295,6 +317,7 @@ export function HomeScreen({ route, go }: Props) {
 
       <section className="panel attach">
         <h2>Handover notes</h2>
+        <p className="hint">Today's notes. Earlier days stay saved for a later review.</p>
         <Field label="What happened this shift?">
           <textarea
             data-testid="handover-body"
@@ -326,16 +349,21 @@ export function HomeScreen({ route, go }: Props) {
             Post note
           </button>
         </div>
-        {notes.length === 0 ? <Empty>No notes yet.</Empty> : null}
+        {todayNotes.length === 0 ? <Empty>No notes yet today.</Empty> : null}
         <ul className="list">
-          {notes.map((note, index) => (
-            <li key={note.id} className={index === 0 ? "card pinned" : "card"}>
+          {todayNotes.map((note, index) => (
+            <li key={note.id} className={index === 0 ? "card pinned" : "card"} data-testid="handover-note">
               {index === 0 ? <span className="badge">Pinned</span> : null}
               {note.body ? <p className="message-body">{note.body}</p> : null}
               {note.imagePath ? <CareImage path={note.imagePath} /> : null}
               <p className="meta">
                 {withEmoji(note.authorName, emoji.get(note.authorId))} · {formatStamp(note.createdAt)}
               </p>
+              {canDeleteNote ? (
+                <button type="button" data-testid="handover-delete" onClick={() => void removeNote(note.id)}>
+                  Delete
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
