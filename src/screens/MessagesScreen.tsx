@@ -304,6 +304,9 @@ export function MessagesScreen({ thread, go }: Props) {
           void send();
         }}
       >
+        {thread === "group" && postsNotice ? (
+          <p className="hint">This message shows on Home under Notice until each person collapses it.</p>
+        ) : null}
         <label className="field">
           <span>Message</span>
           <textarea
@@ -368,9 +371,6 @@ export function MessagesScreen({ thread, go }: Props) {
             Send
           </button>
         </div>
-        {thread === "group" && postsNotice ? (
-          <p className="hint">This message shows on Home under Notice until each person collapses it.</p>
-        ) : null}
       </form>
       ) : null}
       {picture.error ? <Notice>{picture.error}</Notice> : null}
