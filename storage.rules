@@ -14,9 +14,10 @@ service firebase.storage {
     }
 
     function passwordWindowOk() {
-      return userData().signIn == 'google'
-        || userData().signIn == 'email_otp'
-        || userData().passwordExpiresAt > request.time;
+      return ('signIn' in userData() && (userData().signIn == 'google' || userData().signIn == 'email_otp'))
+        || ('passwordExpiresAt' in userData()
+            && userData().passwordExpiresAt is timestamp
+            && userData().passwordExpiresAt > request.time);
     }
 
     function isActiveUser() {

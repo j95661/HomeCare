@@ -58,6 +58,28 @@ describe("storage pictures", () => {
     });
   });
 
+  it("lets a password account with no signIn field store and share a handover picture", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/dad"), {
+        active: true,
+        otpVerified: true,
+        role: "super_admin",
+        passwordExpiresAt: future(),
+      });
+    });
+    await assertSucceeds(put("dad", "handover/dad/note.jpg", png, "image/jpeg"));
+    await assertSucceeds(getBytes(ref(testEnv.authenticatedContext("pat").storage(), "handover/dad/note.jpg")));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/dad"), {
+        active: true,
+        otpVerified: true,
+        role: "super_admin",
+        passwordExpiresAt: Timestamp.fromMillis(Date.now() - 60_000),
+      });
+    });
+    await assertFails(put("dad", "handover/dad/later.jpg", png, "image/jpeg"));
+  });
+
   it("lets the author store a handover picture and a teammate open it", async () => {
     await assertSucceeds(put("pat", "handover/pat/note.png", png, "image/png"));
     await assertFails(put("pat", "handover/sam/note.png", png, "image/png"));
