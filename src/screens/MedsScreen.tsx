@@ -6,16 +6,18 @@ import { db } from "../firebase";
 import { canManageMeds } from "../roles";
 import { useSession } from "../session";
 import { VIEW_CHANGE } from "../viewAs";
+import { MED_TIME_CHOICES, withMedTime, withoutMedTime } from "../medTimes";
 import { formatClock } from "../time";
 import type { Medication } from "../types";
 
-const emptyForm = { name: "", dose: "", frequency: "Daily", times: "08:00", careNotes: "", active: true };
+const emptyForm = { name: "", dose: "", frequency: "Daily", times: ["08:00"], careNotes: "", active: true };
 
 export function MedsScreen() {
   const session = useSession();
   const manage = canManageMeds(session.role);
   const [meds, setMeds] = useState<Medication[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [clock, setClock] = useState("08:00");
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,13 +30,19 @@ export function MedsScreen() {
     );
   }, [session]);
 
-  function parseTimes(value: string): string[] | null {
-    const times = value
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    if (times.length === 0 || times.some((time) => !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(time))) return null;
-    return times;
+  function addTime(time: string) {
+    const next = withMedTime(form.times, time);
+    setForm({ ...form, times: next.times });
+    setError(next.error);
+  }
+
+  function toggleTime(time: string) {
+    if (form.times.includes(time)) {
+      setForm({ ...form, times: withoutMedTime(form.times, time) });
+      setError("");
+      return;
+    }
+    addTime(time);
   }
 
   async function save() {
@@ -42,16 +50,15 @@ export function MedsScreen() {
       setError(VIEW_CHANGE);
       return;
     }
-    const times = parseTimes(form.times);
-    if (!form.name.trim() || !form.frequency.trim() || !times) {
-      setError("Add a name, how often, and times like 08:00, 20:00.");
+    if (!form.name.trim() || !form.frequency.trim() || form.times.length === 0) {
+      setError("Add a name, how often, and at least one time.");
       return;
     }
     const payload = {
       name: form.name.trim(),
       dose: form.dose.trim(),
       frequency: form.frequency.trim(),
-      times,
+      times: form.times,
       careNotes: form.careNotes.trim(),
       active: form.active,
       updatedBy: session.uid,
@@ -63,6 +70,7 @@ export function MedsScreen() {
       if (editing) await updateDoc(doc(db, "medications", editing), payload);
       else await addDoc(collection(db, "medications"), payload);
       setForm(emptyForm);
+      setClock("08:00");
       setEditing(null);
     } catch (err) {
       setError(errorText(err));
@@ -78,7 +86,7 @@ export function MedsScreen() {
       {manage ? (
         <section className="panel">
           <Field label="Name">
-            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <input data-testid="med-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
           <Field label="Dose">
             <input value={form.dose} onChange={(event) => setForm({ ...form, dose: event.target.value })} />
@@ -86,9 +94,40 @@ export function MedsScreen() {
           <Field label="How often">
             <input value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value })} />
           </Field>
-          <Field label="Times">
-            <input value={form.times} onChange={(event) => setForm({ ...form, times: event.target.value })} placeholder="08:00, 20:00" />
-          </Field>
+          <div className="field">
+            <span>Times</span>
+            <div className="times" data-testid="med-time-choices">
+              {MED_TIME_CHOICES.map((time) => (
+                <button
+                  key={time}
+                  type="button"
+                  className={form.times.includes(time) ? "primary" : ""}
+                  data-testid="med-time-choice"
+                  data-time={time}
+                  aria-pressed={form.times.includes(time)}
+                  onClick={() => toggleTime(time)}
+                >
+                  {formatClock(time)}
+                </button>
+              ))}
+            </div>
+            <div className="split">
+              <input data-testid="med-time-clock" type="time" value={clock} onChange={(event) => setClock(event.target.value)} />
+              <button type="button" data-testid="med-time-add" onClick={() => addTime(clock)}>
+                Add time
+              </button>
+            </div>
+            {form.times.length > 0 ? (
+              <div className="times" data-testid="med-times-selected">
+                {form.times.map((time) => (
+                  <button key={time} type="button" data-testid="med-time-selected" data-time={time} onClick={() => toggleTime(time)}>
+                    {formatClock(time)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <p className="hint">Tap 8:00 AM, 8:00 PM, and the other times. Use the clock for a different time. Tap a chosen time to remove it.</p>
+          </div>
           <Field label="Care notes">
             <textarea rows={3} value={form.careNotes} onChange={(event) => setForm({ ...form, careNotes: event.target.value })} />
           </Field>
@@ -96,7 +135,7 @@ export function MedsScreen() {
             <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />
             Active
           </label>
-          <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
+          <button type="button" className="primary" data-testid="med-save" disabled={busy} onClick={() => void save()}>
             {editing ? "Save changes" : "Add medication"}
           </button>
         </section>
@@ -107,7 +146,7 @@ export function MedsScreen() {
           .slice()
           .sort((a, b) => a.name.localeCompare(b.name))
           .map((med) => (
-            <li key={med.id} className="card">
+            <li key={med.id} className="card" data-testid="med-card" data-name={med.name}>
               <strong>{med.name}</strong>
               {!med.active ? <span className="badge">Inactive</span> : null}
               <p>{[med.dose, med.frequency].filter(Boolean).join(" · ")}</p>
@@ -123,7 +162,7 @@ export function MedsScreen() {
                         name: med.name,
                         dose: med.dose,
                         frequency: med.frequency,
-                        times: med.times.join(", "),
+                        times: med.times.slice().sort(),
                         careNotes: med.careNotes,
                         active: med.active,
                       });
@@ -131,7 +170,7 @@ export function MedsScreen() {
                   >
                     Edit
                   </button>
-                  <button type="button" onClick={() => {
+                  <button type="button" data-testid="med-remove" onClick={() => {
                     if (session.viewingAs) {
                       setError(VIEW_CHANGE);
                       return;
