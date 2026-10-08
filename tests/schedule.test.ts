@@ -36,6 +36,17 @@ function exception(overrides: Partial<client.ShiftException> = {}): client.Shift
   };
 }
 
+describe("coverage request list", () => {
+  it("drops cancelled requests and keeps pending and accepted ones", () => {
+    const rows = [
+      { id: "open", status: "pending" },
+      { id: "gone", status: "cancelled" },
+      { id: "taken", status: "accepted" },
+    ];
+    expect(client.visibleCoverageRequests(rows).map((row) => row.id)).toEqual(["open", "taken"]);
+  });
+});
+
 describe("repeating shifts by person", () => {
   it("groups weekdays under each employee, ordered by name", () => {
     const groups = client.groupTemplatesByPerson([

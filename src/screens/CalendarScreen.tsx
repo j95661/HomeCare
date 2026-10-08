@@ -27,6 +27,7 @@ import {
   repeatingShiftGroups,
   resolveRange,
   templateFromData,
+  visibleCoverageRequests,
   weekdayOf,
   type ShiftException,
   type ShiftTemplate,
@@ -240,6 +241,7 @@ export function CalendarScreen() {
   }
 
   const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
+  const shownRequests = visibleCoverageRequests(requests);
   const days = mode === "week" ? Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchor), index)) : mode === "day" ? [anchor] : [];
 
   return (
@@ -472,9 +474,9 @@ export function CalendarScreen() {
 
       <section className="panel">
         <h2>Coverage requests</h2>
-        {requests.length === 0 ? <Empty>No requests yet.</Empty> : null}
+        {shownRequests.length === 0 ? <Empty>No requests yet.</Empty> : null}
         <ul className="list">
-          {requests.map((item) => (
+          {shownRequests.map((item) => (
             <li key={item.id} className="card" data-testid="coverage-request" data-status={item.status} data-type={item.type}>
               <strong>{item.type === "day_off" ? "Day off" : "Shift swap"}</strong>
               <p>
@@ -501,7 +503,7 @@ export function CalendarScreen() {
                 </button>
               ) : null}
               {item.status === "pending" && item.requesterId === session.uid ? (
-                <button type="button" disabled={busy} onClick={() => void cancel(item.id)}>
+                <button type="button" data-testid="cancel-coverage" disabled={busy} onClick={() => void cancel(item.id)}>
                   Cancel request
                 </button>
               ) : null}

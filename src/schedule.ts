@@ -115,6 +115,11 @@ export function repeatingShiftGroups(
   return groups.sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
 }
 
+/** Cancelled coverage leaves the calendar list. */
+export function visibleCoverageRequests<T extends { status: string }>(requests: T[]): T[] {
+  return requests.filter((item) => item.status !== "cancelled");
+}
+
 export function exceptionLabel(kind: "" | "swap" | "day_off"): string {
   if (kind === "day_off") return "Day off";
   if (kind === "swap") return "Swap";
