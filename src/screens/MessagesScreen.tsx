@@ -11,11 +11,12 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { errorText, isPermissionDenied } from "../api";
+import { call, errorText, isPermissionDenied } from "../api";
 import { EMOJI_CHOICES, withEmoji } from "../emoji";
 import { insertText } from "../messageText";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
+import { canDeleteMessage, isAccountEnabled, isCareStaff } from "../roles";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
 import type { ChatMessage, Person, RouteState } from "../types";
@@ -39,6 +40,9 @@ export function MessagesScreen({ thread, go }: Props) {
   const [error, setError] = useState("");
   const [picking, setPicking] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const careStaff = isCareStaff(session.role);
+  const admin = session.role === "super_admin" || session.role === "admin";
   const inputRef = useRef<HTMLInputElement>(null);
   const cursor = useRef({ start: 0, end: 0 });
 
@@ -60,12 +64,14 @@ export function MessagesScreen({ thread, go }: Props) {
         (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
       ),
       onSnapshot(
-        query(
-          collection(db, "threads"),
-          where("type", "==", "direct"),
-          where("participantIds", "array-contains", session.uid),
-          orderBy("lastMessageAt", "desc"),
-        ),
+        admin
+          ? query(collection(db, "threads"), where("type", "==", "direct"), orderBy("lastMessageAt", "desc"))
+          : query(
+              collection(db, "threads"),
+              where("type", "==", "direct"),
+              where("participantIds", "array-contains", session.uid),
+              orderBy("lastMessageAt", "desc"),
+            ),
         (snap) =>
           setDirects(
             snap.docs.map((item) => ({
@@ -79,7 +85,7 @@ export function MessagesScreen({ thread, go }: Props) {
       ),
     ];
     return () => unsubs.forEach((unsub) => unsub());
-  }, [session]);
+  }, [session, admin]);
 
   useEffect(() => {
     if (!thread) return;
@@ -92,9 +98,17 @@ export function MessagesScreen({ thread, go }: Props) {
   }, [thread, session]);
 
   function labelFor(ids: string[]): string {
-    const other = ids.find((id) => id !== session.uid);
-    const person = people.find((item) => item.id === other);
-    return person ? withEmoji(person.displayName, person.emoji) : "Direct message";
+    const names = ids
+      .filter((id) => id !== session.uid)
+      .map((id) => {
+        const person = people.find((item) => item.id === id);
+        return person ? withEmoji(person.displayName, person.emoji) : "Teammate";
+      });
+    return names.length > 0 ? names.join(" · ") : "Direct message";
+  }
+
+  function canReach(person: Person): boolean {
+    return person.id !== session.uid && person.active && isAccountEnabled(person) && person.awaitingGoogle !== true;
   }
 
   async function openDirect(other: Person) {
@@ -179,27 +193,38 @@ export function MessagesScreen({ thread, go }: Props) {
     }
   }
 
+  async function removeMessage(messageId: string) {
+    if (!thread) return;
+    setBusy(true);
+    setError("");
+    try {
+      await call("deleteMessage", { thread, messageId });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!thread) {
     return (
       <div className="stack">
-        <button type="button" className="primary" onClick={() => go({ view: "messages", thread: "group" })}>
-          Everyone
+        <button type="button" className="primary" data-testid="care-team" onClick={() => go({ view: "messages", thread: "group" })}>
+          Care team
         </button>
-        <p className="meta">{groupPreview || "Group thread for the whole care team."}</p>
-        <button type="button" onClick={() => setPicking((open) => !open)}>
-          New message
+        <p className="meta">{groupPreview || "Messages for care providers and team leads."}</p>
+        <button type="button" data-testid="message-one-person" onClick={() => setPicking((open) => !open)}>
+          Message one person
         </button>
         {picking ? (
           <ul className="list">
-            {people
-              .filter((person) => person.id !== session.uid)
-              .map((person) => (
-                <li key={person.id}>
-                  <button type="button" onClick={() => void openDirect(person)}>
-                    {withEmoji(person.displayName, person.emoji)}
-                  </button>
-                </li>
-              ))}
+            {people.filter(canReach).map((person) => (
+              <li key={person.id}>
+                <button type="button" data-testid="message-person" onClick={() => void openDirect(person)}>
+                  {withEmoji(person.displayName, person.emoji)}
+                </button>
+              </li>
+            ))}
           </ul>
         ) : null}
         <ul className="list">
@@ -217,7 +242,8 @@ export function MessagesScreen({ thread, go }: Props) {
     );
   }
 
-  const title = thread === "group" ? "Everyone" : labelFor(directs.find((item) => item.id === thread)?.participantIds ?? thread.split("_").slice(1));
+  const title = thread === "group" ? "Care team" : labelFor(directs.find((item) => item.id === thread)?.participantIds ?? thread.split("_").slice(1));
+  const showComposer = thread !== "group" || careStaff;
 
   return (
     <div className="stack">
@@ -228,13 +254,22 @@ export function MessagesScreen({ thread, go }: Props) {
       {messages.length === 0 ? <Empty>No messages yet.</Empty> : null}
       <ul className="list">
         {messages.map((message) => (
-          <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"}>
+          <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"} data-testid="message-card">
             <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
             <p className="message-body">{message.text}</p>
             <p className="meta">{formatStamp(message.createdAt)}</p>
+            {canDeleteMessage(session.role, session.uid, message.senderId) ? (
+              <button type="button" data-testid="delete-message" disabled={busy} onClick={() => void removeMessage(message.id)}>
+                Delete
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
+      {thread === "group" && !careStaff ? (
+        <p className="hint">Care team messages are for care providers and team leads. You can read them here.</p>
+      ) : null}
+      {showComposer ? (
       <form
         className="composer"
         onSubmit={(event) => {
@@ -296,6 +331,7 @@ export function MessagesScreen({ thread, go }: Props) {
           </button>
         </div>
       </form>
+      ) : null}
       {error ? <Notice>{error}</Notice> : null}
     </div>
   );

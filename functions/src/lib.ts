@@ -7,6 +7,7 @@ import { DEFAULT_TIMEZONE } from "./logic/password";
 import { isRole, type Role } from "./logic/roles";
 import { normalizeSignIn, type SignInMethod } from "./logic/signin";
 import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme, type ColorSchemeId } from "./logic/themes";
+import { isAccountEnabled } from "./logic/roles";
 
 if (getApps().length === 0) initializeApp();
 
@@ -20,8 +21,10 @@ export type UserRecordData = {
   role: Role;
   signIn: SignInMethod;
   emoji: string;
-  colorScheme: ColorSchemeId | "";
+  colorScheme: string;
   active: boolean;
+  enabled: boolean;
+  awaitingGoogle: boolean;
   protected: boolean;
   otpVerified: boolean;
   onShift: boolean;
@@ -73,6 +76,8 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
     emoji: String(data.emoji || ""),
     colorScheme: personalScheme.ok ? personalScheme.colorScheme : "",
     active: data.active === true,
+    enabled: isAccountEnabled({ enabled: data.enabled as boolean | undefined }),
+    awaitingGoogle: data.awaitingGoogle === true,
     protected: data.protected === true,
     otpVerified: data.otpVerified === true,
     onShift: data.onShift === true,
@@ -84,6 +89,9 @@ export async function readProfile(uid: string, store: Firestore = db): Promise<U
 
 export async function requireReadyUser(uid: string): Promise<UserRecordData & { uid: string }> {
   const profile = await readProfile(uid);
+  if (!profile.enabled) {
+    throw new HttpsError("permission-denied", "This account is not enabled yet.");
+  }
   const record = await auth.getUser(uid);
   if (record.disabled || !profile.active) {
     throw new HttpsError("permission-denied", "This account has been revoked.");

@@ -353,7 +353,25 @@ describe("security rules", () => {
       }),
     );
     await assertFails(getDoc(doc(dbFor("lead"), "threads/direct_pat_sam")));
+    await assertSucceeds(getDoc(doc(dbFor("admin"), "threads/direct_pat_sam")));
+    await assertSucceeds(getDocs(collection(dbFor("admin"), "threads/direct_pat_sam/messages")));
     await assertSucceeds(getDoc(doc(dbFor("sam"), "threads/direct_pat_sam")));
+    await assertFails(
+      addDoc(collection(dbFor("admin"), "groupThread/main/messages"), {
+        senderId: "admin",
+        senderName: "Admin",
+        text: "Admin note",
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      addDoc(collection(dbFor("lead"), "groupThread/main/messages"), {
+        senderId: "lead",
+        senderName: "Lead",
+        text: "Covered from the lead desk",
+        createdAt: serverTimestamp(),
+      }),
+    );
     await assertSucceeds(
       getDocs(
         query(

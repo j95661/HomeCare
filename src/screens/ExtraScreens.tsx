@@ -15,9 +15,9 @@ import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
 import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
-import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
+import { canClearUserEmoji, canDeleteActivities, canManageGuides, canManageMeds, canReviewLogs, isAccountEnabled, isSuperAdmin, roleLabel } from "../roles";
 import { nameInitial, PROFILE_EMOJI, useEmojiMap, withEmoji } from "../emoji";
-import { applyTheme, COLOR_SCHEMES, resolveColorScheme } from "../themes";
+import { applyTheme, COLOR_CHART, COLOR_SCHEMES, parseCustomColor, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
 import type { Activity, Guide, GuideStep, Invite, MedLog, Person, Role, RouteState } from "../types";
@@ -320,6 +320,7 @@ export function PeopleScreen() {
   const [email, setEmail] = useState("");
   const [signIn, setSignIn] = useState<"google" | "email_otp">("google");
   const [role, setRole] = useState<Role>("care_provider");
+  const [enableNow, setEnableNow] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -351,9 +352,17 @@ export function PeopleScreen() {
     setBusy(true);
     setError("");
     try {
-      await call("createUserAccount", { displayName, email, role, signIn });
+      const result = await call<{ enabled: boolean; emailError?: string }>("createUserAccount", {
+        displayName,
+        email,
+        role,
+        signIn,
+        enableNow,
+      });
       setDisplayName("");
       setEmail("");
+      setEnableNow(false);
+      if (result.emailError) setError(result.emailError);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -387,6 +396,18 @@ export function PeopleScreen() {
     setError("");
     try {
       await call("clearUserEmoji", { uid });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enable(uid: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await call("enableUserAccount", { uid });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -433,9 +454,19 @@ export function PeopleScreen() {
         </fieldset>
         <p className="hint">
           {signIn === "google"
-            ? "They sign in with Gmail. No password is set."
-            : "They sign in with a 6-digit code emailed to them. No password is set."}
+            ? "After you enable them, they sign in with Gmail. No password is set."
+            : "After you enable them, they sign in with a 6-digit code. No password is set."}
         </p>
+        <fieldset className="schemes">
+          <legend>Invitation</legend>
+          <button type="button" className={enableNow ? "" : "primary"} data-testid="invite-later" onClick={() => setEnableNow(false)}>
+            Add without notifying
+          </button>
+          <button type="button" className={enableNow ? "primary" : ""} data-testid="enable-now" onClick={() => setEnableNow(true)}>
+            Enable now
+          </button>
+        </fieldset>
+        <p className="hint">They stay on the roster so you can set shifts. Enable sends the HammondCare link. Until then they are not emailed.</p>
         <Field label="Role">
           <select data-testid="people-role" value={role} onChange={(event) => setRole(event.target.value as Role)}>
             <option value="admin">Admin</option>
@@ -474,6 +505,7 @@ export function PeopleScreen() {
             onAskRevoke={() => setConfirmId(person.id)}
             onRevoke={() => void revoke(person.id)}
             onClearEmoji={() => void clearEmoji(person.id)}
+            onEnable={() => void enable(person.id)}
           />
         ))}
       </ul>
@@ -490,6 +522,7 @@ function PersonRow({
   onAskRevoke,
   onRevoke,
   onClearEmoji,
+  onEnable,
 }: {
   person: Person;
   confirm: boolean;
@@ -498,6 +531,7 @@ function PersonRow({
   onAskRevoke: () => void;
   onRevoke: () => void;
   onClearEmoji: () => void;
+  onEnable: () => void;
 }) {
   const session = useSession();
   const [name, setName] = useState(person.displayName);
@@ -511,8 +545,15 @@ function PersonRow({
       <p className="meta">
         {person.email} · {roleLabel(person.role)} · {signInLabel(person.signIn)}
         {!person.active ? " · Revoked" : ""}
+        {person.active && !isAccountEnabled(person) ? " · Not enabled" : ""}
+        {person.awaitingGoogle ? " · Waiting for Gmail" : ""}
         {locked ? " · Protected" : ""}
       </p>
+      {manageAccounts && person.active && !isAccountEnabled(person) ? (
+        <button type="button" className="primary" data-testid="enable-person" disabled={busy} onClick={onEnable}>
+          Enable
+        </button>
+      ) : null}
       {showClear ? (
         <button type="button" data-testid="clear-emoji" disabled={busy} onClick={onClearEmoji}>
           Clear emoji
@@ -665,7 +706,7 @@ function SchemePicker() {
   return (
     <section className="panel">
       <h2>Your color scheme</h2>
-      <p className="hint">This changes the colors on your screen only.</p>
+      <p className="hint">This changes the colors on your screen only. Pick a named scheme, a chart color, or any shade.</p>
       <fieldset className="schemes">
         <legend>Color scheme</legend>
         <button
@@ -696,6 +737,35 @@ function SchemePicker() {
           </button>
         ))}
       </fieldset>
+      <fieldset className="color-chart" data-testid="color-chart">
+        <legend>Color chart</legend>
+        {COLOR_CHART.map((hex) => (
+          <button
+            key={hex}
+            type="button"
+            data-testid="color-chart-swatch"
+            data-color={hex}
+            aria-label={hex}
+            aria-pressed={choice === `custom:${hex}`}
+            style={{ background: hex }}
+            onClick={() => {
+              setChoice(`custom:${hex}`);
+              setSaved(false);
+            }}
+          />
+        ))}
+      </fieldset>
+      <Field label="Any color">
+        <input
+          type="color"
+          data-testid="color-chart-input"
+          value={parseCustomColor(choice) ?? "#7a2948"}
+          onChange={(event) => {
+            setChoice(`custom:${event.target.value.toLowerCase()}`);
+            setSaved(false);
+          }}
+        />
+      </Field>
       <button type="button" className="primary" data-testid="scheme-save" disabled={busy} onClick={() => void save()}>
         Save color scheme
       </button>

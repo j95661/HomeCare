@@ -42,6 +42,8 @@ export type Person = {
   emoji?: string;
   signIn?: "password" | "google" | "email_otp";
   active: boolean;
+  enabled?: boolean;
+  awaitingGoogle?: boolean;
   protected: boolean;
   onShift: boolean;
 };

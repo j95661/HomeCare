@@ -254,6 +254,28 @@ describe("notes, guides, and threads", () => {
     );
     await assertFails(deleteDoc(sent));
     await assertFails(getDocs(collection(dbFor("lead"), "threads/direct_pat_sam/messages")));
+    await assertSucceeds(getDocs(collection(dbFor("admin"), "threads/direct_pat_sam/messages")));
     await assertSucceeds(getDocs(collection(dbFor("pat"), "threads/direct_pat_sam/messages")));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/hold"), {
+        email: "hold@example.com",
+        displayName: "Hold",
+        role: "care_provider",
+        active: true,
+        enabled: false,
+        otpVerified: false,
+        onShift: false,
+        protected: false,
+        passwordChangedAt: Timestamp.now(),
+        passwordExpiresAt: future(),
+      });
+    });
+    await assertFails(
+      setDoc(doc(dbFor("pat"), "threads/direct_hold_pat"), {
+        ...thread,
+        participantIds: ["hold", "pat"],
+        title: "Hold",
+      }),
+    );
   });
 });
