@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -12,7 +12,7 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import { call, errorText, isPermissionDenied } from "../api";
+import { errorText, isPermissionDenied } from "../api";
 import { CareImage, PictureButton, PictureControls, careImagePath, uploadCareImage, usePictureDraft } from "../careImage";
 import { useEmojiMap, withEmoji } from "../emoji";
 import { beep } from "../audio";
@@ -25,6 +25,9 @@ import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { isTodaysHandover } from "../handover";
 import { homeMedicationFocus } from "../homeMed";
+import { enqueueMedAction, mergeMedicationLogs, newMedActionId, normalizeQueuedAction, useQueuedMedActions } from "../medQueue";
+import { syncMeds } from "../medSync";
+import { isReachabilityError } from "../offline";
 import { canDeleteHandover } from "../roles";
 import { formatClock, formatDay, formatStamp, todayISO, zonedParts } from "../time";
 import type { Guide, GuideStep, Handover, Medication, MedLog, RouteState } from "../types";
@@ -65,6 +68,11 @@ export function HomeScreen({ route, go }: Props) {
   );
   const [clock, setClock] = useState(() => zonedParts(new Date(), session.timezone).time);
   const day = todayISO(session.timezone);
+  const queued = useQueuedMedActions(session.viewingAs ? "" : session.accountUid);
+  const visibleLogs = useMemo(
+    () => (session.viewingAs ? logs : mergeMedicationLogs(logs, queued, meds, session.displayName, day)),
+    [session.viewingAs, logs, queued, meds, session.displayName, day],
+  );
 
   useEffect(() => {
     if (route.med && route.time) setPrompt({ id: route.med, time: route.time });
@@ -97,32 +105,56 @@ export function HomeScreen({ route, go }: Props) {
             at: at && typeof at.toDate === "function" ? (at as { toDate: () => Date }) : undefined,
           });
         },
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         doc(db, "groupThread/main/noticeReads", session.uid),
         (snap) => setReadNoticeId(snap.exists() ? String(snap.get("noticeMessageId") || "") : ""),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         query(collection(db, "handoverNotes"), orderBy("createdAt", "desc"), limit(40)),
         (snap) => setNotes(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Handover, "id">) }))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         query(collection(db, "medications"), where("active", "==", true)),
         (snap) => setMeds(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<Medication, "id">) }))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         collection(db, "shiftTemplates"),
         (snap) => setTemplates(snap.docs.map((item) => templateFromData(item.id, item.data() as Record<string, unknown>))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         query(collection(db, "shiftExceptions"), where("date", "==", day)),
         (snap) => setExceptions(snap.docs.map((item) => exceptionFromData(item.id, item.data() as Record<string, unknown>))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         collection(db, "guides"),
@@ -136,12 +168,20 @@ export function HomeScreen({ route, go }: Props) {
               steps: (item.get("steps") as GuideStep[]) || [],
             })),
           ),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
       onSnapshot(
         query(collection(db, "medicationLogs"), where("userId", "==", session.uid), where("day", "==", day)),
         (snap) => setLogs(snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Omit<MedLog, "id">) }))),
-        (err) => (isPermissionDenied(err) ? session.onDenied() : setError(errorText(err))),
+        (err) => {
+          if (isReachabilityError(err)) return;
+          if (isPermissionDenied(err)) session.onDenied();
+          else setError(errorText(err));
+        },
       ),
     ];
     return () => unsubs.forEach((unsub) => unsub());
@@ -153,7 +193,7 @@ export function HomeScreen({ route, go }: Props) {
       const current = zonedParts(new Date(), session.timezone).time;
       const due = meds.find((med) => med.times.includes(current));
       if (!due) return;
-      const answered = logs.some(
+      const answered = visibleLogs.some(
         (log) => log.medicationId === due.id && log.scheduledTime === current && log.action !== "snooze",
       );
       if (answered) return;
@@ -166,7 +206,7 @@ export function HomeScreen({ route, go }: Props) {
     tick();
     const id = window.setInterval(tick, 15000);
     return () => window.clearInterval(id);
-  }, [meds, logs, session.onShift, session.viewingAs, session.timezone, day]);
+  }, [meds, visibleLogs, session.onShift, session.viewingAs, session.timezone, day]);
 
   const noticeUnread = Boolean(careNotice && careNotice.id !== readNoticeId);
 
@@ -241,18 +281,33 @@ export function HomeScreen({ route, go }: Props) {
 
   async function respond(action: "given" | "declined" | "missed" | "snooze") {
     if (!prompt) return;
+    if (session.viewingAs) {
+      setError(VIEW_CHANGE);
+      return;
+    }
+    const saved = normalizeQueuedAction({
+      actionId: newMedActionId(),
+      userId: session.accountUid,
+      medicationId: prompt.id,
+      scheduledTime: prompt.time,
+      action,
+      note: noteText,
+      actedAt: Date.now(),
+    });
+    if (!saved) {
+      setError("That medication action could not be saved on this device.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await call("logMedicationResponse", {
-        medicationId: prompt.id,
-        scheduledTime: prompt.time,
-        action,
-        note: noteText,
-      });
+      await enqueueMedAction(saved);
+      sessionStorage.setItem(`homecare-alarm:${prompt.id}:${day}:${prompt.time}`, "1");
       setPrompt(null);
       setNoteText("");
       go({ med: null, time: null });
+      const result = await syncMeds(session.accountUid);
+      if (result.keptMessage) setError(`${result.keptMessage} The action is still saved on this device.`);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -278,7 +333,7 @@ export function HomeScreen({ route, go }: Props) {
   }
 
   const promptMed = meds.find((med) => med.id === prompt?.id);
-  const medFocus = homeMedicationFocus(meds, logs, clock);
+  const medFocus = homeMedicationFocus(meds, visibleLogs, clock);
   const shifts = resolveDay(day, templates, exceptions);
   const myShifts = shifts.filter((shift) => shift.userId === session.uid && !isAwayKind(shift.kind));
   const todoPeriods = periodsForShifts(myShifts);
@@ -410,13 +465,17 @@ export function HomeScreen({ route, go }: Props) {
           <h2>Medications</h2>
           <p data-testid="home-med-time">{formatClock(medFocus[0].time)}</p>
           <ul className="list">
-            {medFocus.map((item) => (
-              <li key={`${item.id}:${item.time}`} data-testid="home-med" data-status={item.status}>
-                <button type="button" onClick={() => setPrompt({ id: item.id, time: item.time })}>
-                  {item.name}
-                </button>
-              </li>
-            ))}
+            {medFocus.map((item) => {
+              const med = meds.find((row) => row.id === item.id);
+              return (
+                <li key={`${item.id}:${item.time}`} data-testid="home-med" data-status={item.status}>
+                  <button type="button" onClick={() => setPrompt({ id: item.id, time: item.time })}>
+                    {item.name}
+                  </button>
+                  {med?.careNotes ? <p data-testid="home-med-notes">{med.careNotes}</p> : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}

@@ -333,6 +333,15 @@ button.person-choice { display: grid; justify-items: start; gap: 2px; }
   background: var(--panel);
   border: 2px solid var(--ink);
 }
+.offline-banner {
+  margin: 0;
+  padding: 12px 14px;
+  border: 2px solid var(--warn);
+  border-radius: 16px;
+  background: var(--warn);
+  color: #fff;
+  font-weight: 700;
+}
 .view-as {
   display: grid;
   gap: 8px;

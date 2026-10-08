@@ -13,6 +13,9 @@ import {
 import { collection, doc, onSnapshot, query, runTransaction, where } from "firebase/firestore";
 import { authError, call, errorText } from "./api";
 import { auth, db } from "./firebase";
+import { syncMeds } from "./medSync";
+import { useQueuedMedActions } from "./medQueue";
+import { isReachabilityError, readCachedSession, shouldRestoreCachedSession, writeCachedSession } from "./offline";
 import { Field, Notice } from "./components";
 import { CalendarScreen } from "./screens/CalendarScreen";
 import { CoverageScreen } from "./screens/CoverageScreen";
@@ -103,6 +106,8 @@ export function App() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [viewPerson, setViewPerson] = useState<ViewIdentity | null>(null);
   const [messagesUnread, setMessagesUnread] = useState(false);
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const [syncMessage, setSyncMessage] = useState("");
   const skipSignOut = useRef(false);
   const viewIdRef = useRef<string | null>(null);
   const loadRef = useRef<(user: User) => Promise<void>>(async () => {});
@@ -114,15 +119,26 @@ export function App() {
   routeRef.current = route;
 
   const load = useCallback(async (user: User) => {
+    const onlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
+    if (!onlineNow) {
+      const cached = readCachedSession(localStorage, user.uid);
+      if (cached) {
+        setGate((current) => (current.kind === "app" ? current : { kind: "app", session: cached }));
+        return;
+      }
+    }
     try {
       const google = user.providerData.some((provider) => provider.providerId === "google.com");
       if (google) {
         try {
           await call("acceptGoogleSignIn");
         } catch (error) {
-          await signOut(auth);
-          setGate({ kind: "signedOut", notice: errorText(error) });
-          return;
+          const googleOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+          if (!shouldRestoreCachedSession(error, googleOnline)) {
+            await signOut(auth);
+            setGate({ kind: "signedOut", notice: errorText(error) });
+            return;
+          }
         }
       }
       const state = await call<SessionPayload>("getSessionState");
@@ -157,6 +173,16 @@ export function App() {
         },
       });
     } catch (error) {
+      const stillOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+      if (shouldRestoreCachedSession(error, stillOnline)) {
+        const cached = readCachedSession(localStorage, user.uid);
+        setGate((current) => {
+          if (current.kind === "app") return current;
+          if (cached) return { kind: "app", session: cached };
+          return { kind: "error", message: errorText(error) };
+        });
+        return;
+      }
       setGate({ kind: "error", message: errorText(error) });
     }
   }, []);
@@ -230,6 +256,13 @@ export function App() {
         return;
       }
       skipSignOut.current = false;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        const cached = readCachedSession(localStorage, user.uid);
+        if (cached) {
+          setGate({ kind: "app", session: cached });
+          return;
+        }
+      }
       setGate({ kind: "loading" });
       void load(user);
     });
@@ -253,6 +286,7 @@ export function App() {
       applyTheme(DEFAULT_COLOR_SCHEME);
       return;
     }
+    applyTheme(personalScheme || gate.session.colorScheme || DEFAULT_COLOR_SCHEME);
     return onSnapshot(doc(db, "settings/app"), (snap) => {
       const team = resolveColorScheme(String(snap.get("colorScheme") || ""));
       setGate((current) =>
@@ -262,8 +296,15 @@ export function App() {
       );
       if (editingAppearance) return;
       applyTheme(personalScheme || team);
+    }, (error) => {
+      if (isReachabilityError(error)) return;
     });
-  }, [gate.kind, personalScheme, editingAppearance]);
+  }, [gate.kind, gate.kind === "app" ? gate.session.colorScheme : "", personalScheme, editingAppearance]);
+
+  useEffect(() => {
+    if (gate.kind !== "app") return;
+    writeCachedSession(localStorage, gate.session);
+  }, [gate]);
 
   useEffect(() => {
     if (gate.kind !== "app") return;
@@ -315,6 +356,8 @@ export function App() {
           });
         }
       } catch (error) {
+        const onlineNow = typeof navigator === "undefined" ? true : navigator.onLine;
+        if (shouldRestoreCachedSession(error, onlineNow)) return;
         setGate({ kind: "error", message: errorText(error) });
       }
     })();
@@ -354,6 +397,7 @@ export function App() {
   }, [gate, viewPerson, setEmoji, setColorScheme, onDenied, switchTo, switchBack]);
 
   const appUid = gate.kind === "app" ? gate.session.uid : "";
+  const queuedMeds = useQueuedMedActions(viewPerson ? "" : appUid);
   const appTimezone = gate.kind === "app" ? gate.session.timezone : "";
   const accountBackground = gate.kind === "app" ? gate.session.backgroundImage : "";
   useAccountBackground(accountBackground);
@@ -449,6 +493,47 @@ export function App() {
     };
   }, [appUid, appTimezone, shiftDay]);
 
+  const sawOffline = useRef(false);
+  useEffect(() => {
+    if (!online) {
+      sawOffline.current = true;
+      return;
+    }
+    if (!sawOffline.current || gate.kind !== "app") return;
+    sawOffline.current = false;
+    const user = auth.currentUser;
+    if (user) void load(user);
+  }, [online, gate.kind, load]);
+
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!appUid || viewPerson) return;
+    let cancelled = false;
+    const run = () => {
+      void syncMeds(appUid).then((result) => {
+        if (cancelled) return;
+        if (result.keptMessage) setSyncMessage(`${result.keptMessage} The action is still saved on this device.`);
+        else if (!result.retry) setSyncMessage("");
+      });
+    };
+    run();
+    window.addEventListener("online", run);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", run);
+    };
+  }, [appUid, viewPerson]);
+
   const toggleShift = useCallback(async () => {
     const user = auth.currentUser;
     if (!user || gate.kind !== "app" || shiftBusy) return;
@@ -470,7 +555,7 @@ export function App() {
         tx.update(userRef, { onShift: desired, shiftHold });
       });
     } catch (error) {
-      setShiftError(errorText(error));
+      setShiftError(isReachabilityError(error) ? "Shift changes sync when you reconnect." : errorText(error));
       setGate((current) =>
         current.kind === "app" ? { kind: "app", session: { ...current.session, onShift: previous } } : current,
       );
@@ -594,6 +679,17 @@ export function App() {
         ) : null}
       </header>
       <main className="main">
+        {online ? null : (
+          <p className="offline-banner" data-testid="offline-banner" role="status">
+            Offline. Medication actions stay on this device and sync when you reconnect.
+            {queuedMeds.length > 0 ? ` ${queuedMeds.length} waiting to sync.` : ""}
+          </p>
+        )}
+        {syncMessage ? (
+          <p className="notice" data-testid="med-sync-status" role="status">
+            {syncMessage}
+          </p>
+        ) : null}
         {gate.kind === "loading" ? <p className="hint">Loading…</p> : null}
         {gate.kind === "error" ? (
           <div className="stack">

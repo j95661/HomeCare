@@ -5,8 +5,8 @@ import {
   connectFirestoreEmulator,
   getFirestore,
   initializeFirestore,
-  memoryLocalCache,
   persistentLocalCache,
+  persistentMultipleTabManager,
 } from "firebase/firestore";
 import { getMessaging, type Messaging } from "firebase/messaging";
 import { connectStorageEmulator, getStorage } from "firebase/storage";
@@ -28,7 +28,7 @@ const useEmulators = import.meta.env.VITE_USE_EMULATORS === "true";
 function createDb() {
   try {
     return initializeFirestore(app, {
-      localCache: useEmulators ? memoryLocalCache() : persistentLocalCache(),
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch {
     return getFirestore(app);
