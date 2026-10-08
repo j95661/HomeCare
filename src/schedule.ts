@@ -78,6 +78,22 @@ export function isOpenTemplate(template: { effectiveUntil: string }, today: stri
   return template.effectiveUntil === "" || template.effectiveUntil > today;
 }
 
+/** Repeating shifts for one person, weekdays in order. Groups are ordered by name. */
+export function groupTemplatesByPerson(templates: ShiftTemplate[]): { userId: string; userName: string; shifts: ShiftTemplate[] }[] {
+  const ordered = templates
+    .slice()
+    .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
+  const byPerson = new Map<string, ShiftTemplate[]>();
+  for (const template of ordered) {
+    const shifts = byPerson.get(template.userId) ?? [];
+    shifts.push(template);
+    byPerson.set(template.userId, shifts);
+  }
+  return [...byPerson.values()]
+    .map((shifts) => ({ userId: shifts[0].userId, userName: shifts[0].userName, shifts }))
+    .sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
+}
+
 export function exceptionLabel(kind: "" | "swap" | "day_off"): string {
   if (kind === "day_off") return "Day off";
   if (kind === "swap") return "Swap";

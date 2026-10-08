@@ -36,6 +36,19 @@ function exception(overrides: Partial<client.ShiftException> = {}): client.Shift
   };
 }
 
+describe("repeating shifts by person", () => {
+  it("groups weekdays under each employee, ordered by name", () => {
+    const groups = client.groupTemplatesByPerson([
+      template({ id: "sam-fri", userId: "sam", userName: "Sam", weekday: 5, start: "16:00", end: "22:00" }),
+      template({ id: "alex-mon", userId: "alex", userName: "Alex", weekday: 1, start: "08:00", end: "16:00" }),
+      template({ id: "alex-wed", weekday: 3 }),
+    ]);
+    expect(groups.map((group) => group.userName)).toEqual(["Alex", "Sam"]);
+    expect(groups[0].shifts.map((shift) => shift.weekday)).toEqual([1, 3]);
+    expect(groups[1].shifts.map((shift) => shift.id)).toEqual(["sam-fri"]);
+  });
+});
+
 for (const { name, api } of apis) {
   describe(`weekly schedule (${name})`, () => {
     it("counts weekdays from the known Sunday", () => {
