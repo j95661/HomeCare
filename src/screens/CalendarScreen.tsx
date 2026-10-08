@@ -16,7 +16,7 @@ import { call, errorText, isPermissionDenied } from "../api";
 import { withEmoji } from "../emoji";
 import { Empty, Field, Notice } from "../components";
 import { db } from "../firebase";
-import { canManageSchedule, isAccountEnabled } from "../roles";
+import { canEditWeeklyPattern, isAccountEnabled } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import {
   WEEKDAY_NAMES,
@@ -29,6 +29,7 @@ import {
   templateFromData,
   visibleCoverageRequests,
   weekdayOf,
+  type ResolvedShift,
   type ShiftException,
   type ShiftTemplate,
 } from "../schedule";
@@ -61,10 +62,16 @@ export function CalendarScreen() {
   const [showForm, setShowForm] = useState(false);
   const [openPatternPeople, setOpenPatternPeople] = useState<ReadonlySet<string>>(() => new Set());
   const [form, setForm] = useState({ userId: "", weekday: weekdayOf(anchor), start: "08:00", end: "16:00" });
-  const manage = canManageSchedule(session.role);
+  const manage = canEditWeeklyPattern(session.role);
+  const [board, setBoard] = useState<"mine" | "team">("mine");
   const today = todayISO(session.timezone);
 
   const range = useMemo(() => {
+    if (!manage) {
+      const focus = board === "team" ? anchor : today;
+      const start = startOfWeek(focus);
+      return { start, end: addDays(start, 6) };
+    }
     if (mode === "day") return { start: anchor, end: anchor };
     if (mode === "week") {
       const start = startOfWeek(anchor);
@@ -72,7 +79,7 @@ export function CalendarScreen() {
     }
     const grid = monthGrid(anchor);
     return { start: grid[0]?.date ?? anchor, end: grid[grid.length - 1]?.date ?? anchor };
-  }, [mode, anchor]);
+  }, [manage, board, today, mode, anchor]);
 
   const shifts = useMemo(
     () => resolveRange(range.start, range.end, templates, exceptions),
@@ -86,6 +93,13 @@ export function CalendarScreen() {
         templates.filter((template) => isOpenTemplate(template, today)),
       ),
     [people, templates, today],
+  );
+  const myTemplates = useMemo(
+    () =>
+      templates
+        .filter((template) => template.userId === session.uid && isOpenTemplate(template, today))
+        .sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start) || a.id.localeCompare(b.id)),
+    [templates, session.uid, today],
   );
 
   useEffect(() => {
@@ -123,8 +137,9 @@ export function CalendarScreen() {
   }, [range.start, range.end, session]);
 
   function move(direction: -1 | 1) {
-    if (mode === "month") setAnchor((current) => addMonths(current, direction));
-    else setAnchor((current) => addDays(current, mode === "week" ? direction * 7 : direction));
+    if (!manage || mode === "week") setAnchor((current) => addDays(current, direction * 7));
+    else if (mode === "month") setAnchor((current) => addMonths(current, direction));
+    else setAnchor((current) => addDays(current, direction));
   }
 
   async function savePattern() {
@@ -242,10 +257,91 @@ export function CalendarScreen() {
 
   const pendingIds = new Set(requests.filter((item) => item.status === "pending").map((item) => item.shiftId));
   const shownRequests = visibleCoverageRequests(requests);
-  const days = mode === "week" ? Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchor), index)) : mode === "day" ? [anchor] : [];
+  const weekStart = startOfWeek(!manage && board === "mine" ? today : anchor);
+  const days =
+    !manage || mode === "week"
+      ? Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+      : mode === "day"
+        ? [anchor]
+        : [];
+
+  function renderShift(shift: ResolvedShift) {
+    return (
+      <li
+        key={shift.id}
+        className={shift.source === "exception" ? "card exception" : "card"}
+        data-testid="resolved-shift"
+        data-source={shift.source}
+        data-kind={shift.kind}
+        data-date={shift.date}
+        data-user={shift.userName}
+      >
+        {shift.source === "exception" ? (
+          <span className="badge" data-testid="exception-badge">
+            {exceptionLabel(shift.kind)}
+          </span>
+        ) : null}
+        <strong>{withEmoji(shift.userName, people.find((person) => person.id === shift.userId)?.emoji)}</strong>
+        <p>
+          {formatClock(shift.start)} – {formatClock(shift.end)}
+          {people.find((person) => person.id === shift.userId)?.onShift ? " · On shift now" : ""}
+        </p>
+        {shift.userId === session.uid && shift.templateId ? (
+          <div className="split">
+            <button
+              type="button"
+              data-testid="request-swap"
+              disabled={busy || pendingIds.has(shift.id)}
+              onClick={() => void requestCoverage(shift.templateId, shift.date, "swap")}
+            >
+              Request swap
+            </button>
+            <button
+              type="button"
+              data-testid="request-day-off"
+              disabled={busy || pendingIds.has(shift.id)}
+              onClick={() => void requestCoverage(shift.templateId, shift.date, "day_off")}
+            >
+              Request day off
+            </button>
+          </div>
+        ) : null}
+      </li>
+    );
+  }
+
+  function dayBlock(date: string, onlyUserId: string | null) {
+    const dayShifts = shifts.filter((shift) => shift.date === date && (onlyUserId === null || shift.userId === onlyUserId));
+    if (onlyUserId && dayShifts.length === 0) return null;
+    const mark = dayExceptionLabel(dayShifts);
+    return (
+      <section key={date} className={mark ? "panel exception" : "panel"} data-testid={`schedule-day-${date}`}>
+        <h2>{formatDay(date)}</h2>
+        {mark ? (
+          <span className="badge" data-testid="day-exception">
+            {mark}
+          </span>
+        ) : null}
+        {dayShifts.length === 0 ? <Empty>No shifts.</Empty> : null}
+        <ul className="list">{dayShifts.map(renderShift)}</ul>
+      </section>
+    );
+  }
 
   return (
     <div className="stack">
+      {manage ? null : (
+        <div className="split">
+          <button type="button" className={board === "mine" ? "primary" : ""} data-testid="calendar-mine" onClick={() => setBoard("mine")}>
+            My schedule
+          </button>
+          <button type="button" className={board === "team" ? "primary" : ""} data-testid="calendar-team" onClick={() => setBoard("team")}>
+            Team schedule
+          </button>
+        </div>
+      )}
+      {manage ? (
+      <>
       <div className="split">
         {(["day", "week", "month"] as const).map((item) => (
           <button key={item} type="button" className={mode === item ? "primary" : ""} data-testid={`calendar-${item}`} onClick={() => setMode(item)}>
@@ -376,8 +472,57 @@ export function CalendarScreen() {
           </ul>
         </section>
       ) : null}
+      </>
+      ) : board === "mine" ? (
+        <>
+          <section className="panel" data-testid="my-repeating">
+            <h2>Repeating shift</h2>
+            <p className="hint">This repeats every week. A swap or day off changes one date, and the team week shows it.</p>
+            {myTemplates.length === 0 ? <Empty>No weekly shifts yet.</Empty> : null}
+            <ul className="list">
+              {myTemplates.map((template) => (
+                <li key={template.id} className="card" data-testid="my-pattern" data-weekday={template.weekday}>
+                  <strong>{WEEKDAY_NAMES[template.weekday] ?? "Weekday"}</strong>
+                  <p>
+                    {formatClock(template.start)} – {formatClock(template.end)}
+                  </p>
+                  <p className="meta">{patternSpan(template)}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <h2>This week</h2>
+          {days.some((date) => shifts.some((shift) => shift.date === date && shift.userId === session.uid)) ? (
+            days.map((date) => dayBlock(date, session.uid))
+          ) : (
+            <Empty>Nothing on your schedule this week.</Empty>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="split thirds">
+            <button type="button" onClick={() => move(-1)}>
+              Previous
+            </button>
+            <button type="button" onClick={() => setAnchor(today)}>
+              This week
+            </button>
+            <button type="button" onClick={() => move(1)}>
+              Next
+            </button>
+          </div>
+          <p className="meta">
+            {formatDay(range.start)} – {formatDay(range.end)}
+          </p>
+          {days.some((date) => shifts.some((shift) => shift.date === date)) ? (
+            days.filter((date) => shifts.some((shift) => shift.date === date)).map((date) => dayBlock(date, null))
+          ) : (
+            <Empty>No shifts this week.</Empty>
+          )}
+        </>
+      )}
 
-      {mode === "month" ? (
+      {manage && mode === "month" ? (
         <div className="month">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
             <span key={label} className="dow">
@@ -410,67 +555,9 @@ export function CalendarScreen() {
             );
           })}
         </div>
-      ) : (
-        days.map((date) => {
-          const dayShifts = shifts.filter((shift) => shift.date === date);
-          const mark = dayExceptionLabel(dayShifts);
-          return (
-            <section key={date} className={mark ? "panel exception" : "panel"} data-testid={`schedule-day-${date}`}>
-              <h2>{formatDay(date)}</h2>
-              {mark ? (
-                <span className="badge" data-testid="day-exception">
-                  {mark}
-                </span>
-              ) : null}
-              {dayShifts.length === 0 ? <Empty>No shifts.</Empty> : null}
-              <ul className="list">
-                {dayShifts.map((shift) => (
-                  <li
-                    key={shift.id}
-                    className={shift.source === "exception" ? "card exception" : "card"}
-                    data-testid="resolved-shift"
-                    data-source={shift.source}
-                    data-kind={shift.kind}
-                    data-date={shift.date}
-                    data-user={shift.userName}
-                  >
-                    {shift.source === "exception" ? (
-                      <span className="badge" data-testid="exception-badge">
-                        {exceptionLabel(shift.kind)}
-                      </span>
-                    ) : null}
-                    <strong>{withEmoji(shift.userName, people.find((person) => person.id === shift.userId)?.emoji)}</strong>
-                    <p>
-                      {formatClock(shift.start)} – {formatClock(shift.end)}
-                      {people.find((person) => person.id === shift.userId)?.onShift ? " · On shift now" : ""}
-                    </p>
-                    {shift.userId === session.uid && shift.templateId ? (
-                      <div className="split">
-                        <button
-                          type="button"
-                          data-testid="request-swap"
-                          disabled={busy || pendingIds.has(shift.id)}
-                          onClick={() => void requestCoverage(shift.templateId, shift.date, "swap")}
-                        >
-                          Request swap
-                        </button>
-                        <button
-                          type="button"
-                          data-testid="request-day-off"
-                          disabled={busy || pendingIds.has(shift.id)}
-                          onClick={() => void requestCoverage(shift.templateId, shift.date, "day_off")}
-                        >
-                          Request day off
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })
-      )}
+      ) : manage ? (
+        days.map((date) => dayBlock(date, null))
+      ) : null}
 
       <section className="panel">
         <h2>Coverage requests</h2>
@@ -489,7 +576,7 @@ export function CalendarScreen() {
                   ? ` · ${withEmoji(item.acceptedByName, people.find((person) => person.id === item.acceptedBy)?.emoji)}`
                   : ""}
               </p>
-              {item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
+              {manage && item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
               <ul className="history">
                 {(item.history ?? []).map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>

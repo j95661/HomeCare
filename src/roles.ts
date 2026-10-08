@@ -25,6 +25,11 @@ export function canManageSchedule(role: Role): boolean {
   return role === "super_admin" || role === "admin" || role === "team_lead";
 }
 
+/** Adding or rewriting the weekly pattern is an admin screen, not an employee screen. */
+export function canEditWeeklyPattern(role: Role): boolean {
+  return role === "super_admin" || role === "admin";
+}
+
 export function canReviewLogs(role: Role): boolean {
   return canManageSchedule(role);
 }
