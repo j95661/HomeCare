@@ -10,6 +10,8 @@ import {
   canClearUserEmoji as serverCanClearUserEmoji,
   canDeleteMessage as serverCanDeleteMessage,
   isAccountEnabled as serverIsAccountEnabled,
+  canPostCareTeamNotice as serverCanPostCareTeamNotice,
+  canPostToCareTeam as serverCanPostToCareTeam,
   isCareStaff as serverIsCareStaff,
   canWriteSettings,
   isProtectedAccount,
@@ -20,6 +22,8 @@ import {
   canClearUserEmoji,
   canDeleteMessage,
   isAccountEnabled,
+  canPostCareTeamNotice,
+  canPostToCareTeam,
   isCareStaff,
   canDeleteActivities,
   canManageGuides,
@@ -51,6 +55,8 @@ describe("role capabilities", () => {
       expect(isSuperAdmin(role)).toBe(role === "super_admin");
       expect(canClearUserEmoji(role, "admin", "pat")).toBe(serverCanClearUserEmoji(role, "admin", "pat"));
       expect(isCareStaff(role)).toBe(serverIsCareStaff(role));
+      expect(canPostToCareTeam(role)).toBe(serverCanPostToCareTeam(role));
+      expect(canPostCareTeamNotice(role)).toBe(serverCanPostCareTeamNotice(role));
       expect(canDeleteMessage(role, "a", "a")).toBe(serverCanDeleteMessage(role, "a", "a"));
       expect(canDeleteMessage(role, "a", "b")).toBe(serverCanDeleteMessage(role, "a", "b"));
     }
@@ -88,6 +94,8 @@ describe("role capabilities", () => {
 
   it("lets the author or an admin delete a message, and keeps the care team to care staff", () => {
     expect(roles.filter(isCareStaff)).toEqual(["team_lead", "care_provider"]);
+    expect(roles.filter(canPostToCareTeam)).toEqual(roles);
+    expect(roles.filter(canPostCareTeamNotice)).toEqual(["super_admin", "admin", "team_lead"]);
     expect(canDeleteMessage("care_provider", "pat", "pat")).toBe(true);
     expect(canDeleteMessage("team_lead", "lead", "pat")).toBe(false);
     expect(canDeleteMessage("admin", "admin", "pat")).toBe(true);

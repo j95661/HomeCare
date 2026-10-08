@@ -284,20 +284,61 @@ service cloud.firestore {
     }
 
     function validChatMessage(data, imageFolder) {
-      let textOnly = data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt'])
-        && data.text.size() > 0
-        && data.text.matches('.*\\S.*');
-      let withImage = data.keys().hasOnly(['senderId', 'senderName', 'text', 'createdAt', 'imagePath'])
-        && ownedImage(data.imagePath, imageFolder)
-        && (data.text.size() == 0 || data.text.matches('.*\\S.*'));
-      return data.senderId == request.auth.uid
+      let keys = data.keys();
+      let hasImage = keys.hasAny(['imagePath']);
+      let hasNotice = keys.hasAny(['notice']);
+      let allowed = keys.hasOnly(['senderId', 'senderName', 'text', 'createdAt'])
+        || keys.hasOnly(['senderId', 'senderName', 'text', 'createdAt', 'imagePath'])
+        || keys.hasOnly(['senderId', 'senderName', 'text', 'createdAt', 'notice'])
+        || keys.hasOnly(['senderId', 'senderName', 'text', 'createdAt', 'imagePath', 'notice']);
+      let textOk = hasImage
+        ? (data.text.size() == 0 || data.text.matches('.*\\S.*'))
+        : (data.text.size() > 0 && data.text.matches('.*\\S.*'));
+      let imageOk = !hasImage || ownedImage(data.imagePath, imageFolder);
+      let noticeOk = !hasNotice || (data.notice is bool && (data.notice == false || isTeamLeadOrAbove()));
+      return allowed
+        && data.senderId == request.auth.uid
         && data.senderName is string
         && data.senderName.size() > 0
         && data.senderName.size() <= 80
         && data.text is string
         && data.text.size() <= 2000
         && data.createdAt == request.time
-        && (textOnly || withImage);
+        && textOk
+        && imageOk
+        && noticeOk;
+    }
+
+    function careTeamPreviewUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let preview = changed.hasOnly(['lastMessageText', 'lastMessageAt', 'lastSenderName', 'lastSenderId']);
+      let notice = isTeamLeadOrAbove()
+        && changed.hasOnly([
+          'lastMessageText', 'lastMessageAt', 'lastSenderName', 'lastSenderId',
+          'noticeMessageId', 'noticeText', 'noticeSenderId', 'noticeSenderName', 'noticeImagePath', 'noticeAt'
+        ])
+        && request.resource.data.noticeSenderId == request.auth.uid
+        && request.resource.data.noticeAt == request.time
+        && request.resource.data.noticeMessageId is string
+        && request.resource.data.noticeMessageId.size() > 0
+        && request.resource.data.noticeMessageId.size() <= 128
+        && request.resource.data.noticeText is string
+        && request.resource.data.noticeText.size() <= 2000
+        && request.resource.data.noticeSenderName is string
+        && request.resource.data.noticeSenderName.size() > 0
+        && request.resource.data.noticeSenderName.size() <= 80
+        && request.resource.data.noticeImagePath is string
+        && request.resource.data.noticeImagePath.size() <= 180
+        && (
+          request.resource.data.noticeImagePath == ''
+          || ownedImage(request.resource.data.noticeImagePath, 'messages/group/')
+        );
+      return (preview || notice)
+        && request.resource.data.lastSenderId == request.auth.uid
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessageText.size() <= 140
+        && request.resource.data.lastSenderName is string;
     }
 
     match /handoverNotes/{id} {
@@ -329,22 +370,26 @@ service cloud.firestore {
     match /groupThread/{docId} {
       allow read: if isActiveUser() && docId == 'main';
       allow create, delete: if false;
-      allow update: if isCareStaff()
-        && docId == 'main'
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['lastMessageText', 'lastMessageAt', 'lastSenderName', 'lastSenderId'])
-        && request.resource.data.lastSenderId == request.auth.uid
-        && request.resource.data.lastMessageAt == request.time
-        && request.resource.data.lastMessageText is string
-        && request.resource.data.lastMessageText.size() <= 140
-        && request.resource.data.lastSenderName is string;
+      allow update: if (isCareStaff() || isAdmin()) && docId == 'main' && careTeamPreviewUpdate();
 
       match /messages/{messageId} {
         allow read: if isActiveUser() && docId == 'main';
-        allow create: if isCareStaff()
+        allow create: if (isCareStaff() || isAdmin())
           && docId == 'main'
           && validChatMessage(request.resource.data, 'messages/group/');
         allow update, delete: if false;
+      }
+
+      match /noticeReads/{uid} {
+        allow read: if isActiveUser() && (uid == request.auth.uid || isAdmin());
+        allow create, update: if isActiveUser()
+          && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['noticeMessageId', 'readAt'])
+          && request.resource.data.noticeMessageId is string
+          && request.resource.data.noticeMessageId.size() > 0
+          && request.resource.data.noticeMessageId.size() <= 128
+          && request.resource.data.readAt == request.time;
+        allow delete: if false;
       }
     }
 

@@ -43,9 +43,19 @@ export function canClearUserEmoji(role: Role, callerUid: string, targetUid: stri
   return targetUid.length > 0 && callerUid !== targetUid;
 }
 
-/** Care team messages are posted and delivered to these roles. */
+/** Care team chat notifications go to care providers and team leads. */
 export function isCareStaff(role: Role): boolean {
   return role === "team_lead" || role === "care_provider";
+}
+
+/** Anyone on the roster can write in the care team thread. */
+export function canPostToCareTeam(role: Role): boolean {
+  return role === "super_admin" || role === "admin" || role === "team_lead" || role === "care_provider";
+}
+
+/** A lead or parent message is also the Home notice. */
+export function canPostCareTeamNotice(role: Role): boolean {
+  return role === "super_admin" || role === "admin" || role === "team_lead";
 }
 
 /** Missing `enabled` means the account was created before the roster flag and can sign in. */

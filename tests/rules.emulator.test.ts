@@ -357,12 +357,70 @@ describe("security rules", () => {
     await assertSucceeds(getDoc(doc(dbFor("admin"), "threads/direct_pat_sam")));
     await assertSucceeds(getDocs(collection(dbFor("admin"), "threads/direct_pat_sam/messages")));
     await assertSucceeds(getDoc(doc(dbFor("sam"), "threads/direct_pat_sam")));
-    await assertFails(
+    await assertSucceeds(
       addDoc(collection(dbFor("admin"), "groupThread/main/messages"), {
         senderId: "admin",
         senderName: "Admin",
         text: "Admin note",
         createdAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      addDoc(collection(dbFor("admin"), "groupThread/main/messages"), {
+        senderId: "admin",
+        senderName: "Admin",
+        text: "Please read this",
+        notice: true,
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      addDoc(collection(dbFor("pat"), "groupThread/main/messages"), {
+        senderId: "pat",
+        senderName: "Pat",
+        text: "This is not a notice",
+        notice: true,
+        createdAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(dbFor("admin"), "groupThread/main"), {
+        lastMessageText: "Please read this",
+        lastMessageAt: serverTimestamp(),
+        lastSenderId: "admin",
+        lastSenderName: "Admin",
+        noticeMessageId: "m1",
+        noticeText: "Please read this",
+        noticeSenderId: "admin",
+        noticeSenderName: "Admin",
+        noticeImagePath: "",
+        noticeAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbFor("pat"), "groupThread/main"), {
+        lastMessageText: "Nope",
+        lastMessageAt: serverTimestamp(),
+        lastSenderId: "pat",
+        lastSenderName: "Pat",
+        noticeMessageId: "m2",
+        noticeText: "Nope",
+        noticeSenderId: "pat",
+        noticeSenderName: "Pat",
+        noticeImagePath: "",
+        noticeAt: serverTimestamp(),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(dbFor("pat"), "groupThread/main/noticeReads/pat"), {
+        noticeMessageId: "m1",
+        readAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      setDoc(doc(dbFor("pat"), "groupThread/main/noticeReads/sam"), {
+        noticeMessageId: "m1",
+        readAt: serverTimestamp(),
       }),
     );
     await assertSucceeds(

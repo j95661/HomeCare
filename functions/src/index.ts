@@ -27,6 +27,7 @@ import { canClearUserEmoji, canDeleteMessage, canManageSchedule, isAccountEnable
 import {
   careTeamRecipients,
   directRecipients,
+  messageRecipients,
   selectMedicationDispatches,
   type PendingSnooze,
   type ReminderMed,
@@ -1157,13 +1158,14 @@ async function notifyMessage(
   hasImage: boolean,
   threadId: string,
   directParticipantIds?: string[],
+  notice = false,
 ): Promise<void> {
   const users = await loadActiveUsers();
   const shown = messagePreview(text, hasImage);
   const preview = shown.length > 120 ? `${shown.slice(0, 117)}...` : shown;
   const recipients = directParticipantIds
     ? directRecipients(users, senderId, directParticipantIds)
-    : careTeamRecipients(users, senderId).map((user) => user.uid);
+    : (notice ? messageRecipients(users, senderId) : careTeamRecipients(users, senderId)).map((user) => user.uid);
   const sender = users.find((user) => user.uid === senderId);
   const title = withEmoji(senderName || "New message", sender?.emoji);
   await sendVisiblePush(db, messaging, recipients, {
@@ -1183,6 +1185,8 @@ export const onGroupMessage = onDocumentCreated("groupThread/{docId}/messages/{m
     String(data.text || ""),
     typeof data.imagePath === "string" && data.imagePath.length > 0,
     "group",
+    undefined,
+    data.notice === true,
   );
 });
 
@@ -1213,25 +1217,40 @@ export const deleteMessage = onCall(callable, async (request) => {
   if (!canDeleteMessage(caller.role, caller.uid, senderId)) {
     throw new HttpsError("permission-denied", "Only the sender or an admin can delete this message.");
   }
+  const parentBefore = group ? await parentRef.get() : null;
+  const wasNotice = group && String(parentBefore?.get("noticeMessageId") || "") === messageId;
   await messageRef.delete();
   const remaining = await parentRef.collection("messages").orderBy("createdAt", "desc").limit(1).get();
-  if (remaining.empty) {
-    await parentRef.update({
-      lastMessageText: "",
-      lastSenderId: "",
-      lastSenderName: "",
-      lastMessageAt: FieldValue.serverTimestamp(),
-    });
-  } else {
-    const latest = remaining.docs[0];
-    const latestPath = latest.get("imagePath");
-    await parentRef.update({
-      lastMessageText: messagePreview(String(latest.get("text") || ""), typeof latestPath === "string" && latestPath.length > 0),
-      lastSenderId: String(latest.get("senderId") || ""),
-      lastSenderName: String(latest.get("senderName") || ""),
-      lastMessageAt: latest.get("createdAt") || FieldValue.serverTimestamp(),
-    });
+  const update: Record<string, unknown> = remaining.empty
+    ? {
+        lastMessageText: "",
+        lastSenderId: "",
+        lastSenderName: "",
+        lastMessageAt: FieldValue.serverTimestamp(),
+      }
+    : {
+        lastMessageText: messagePreview(
+          String(remaining.docs[0].get("text") || ""),
+          typeof remaining.docs[0].get("imagePath") === "string" && String(remaining.docs[0].get("imagePath")).length > 0,
+        ),
+        lastSenderId: String(remaining.docs[0].get("senderId") || ""),
+        lastSenderName: String(remaining.docs[0].get("senderName") || ""),
+        lastMessageAt: remaining.docs[0].get("createdAt") || FieldValue.serverTimestamp(),
+      };
+  if (group && (wasNotice || remaining.empty)) {
+    const nextNotice = remaining.empty
+      ? null
+      : (
+          await parentRef.collection("messages").where("notice", "==", true).orderBy("createdAt", "desc").limit(1).get()
+        ).docs[0];
+    update.noticeMessageId = nextNotice?.id || "";
+    update.noticeText = nextNotice ? String(nextNotice.get("text") || "") : "";
+    update.noticeSenderId = nextNotice ? String(nextNotice.get("senderId") || "") : "";
+    update.noticeSenderName = nextNotice ? String(nextNotice.get("senderName") || "") : "";
+    update.noticeImagePath = nextNotice ? String(nextNotice.get("imagePath") || "") : "";
+    update.noticeAt = nextNotice?.get("createdAt") || FieldValue.serverTimestamp();
   }
+  await parentRef.update(update);
   return { deleted: true };
 });
 

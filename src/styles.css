@@ -312,6 +312,13 @@ button.emoji {
   gap: 8px;
   color: var(--muted);
   font-weight: 700;
+  min-width: 0;
+}
+.notice-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46vw;
 }
 .collapse-mark {
   font-size: 1.35rem;
