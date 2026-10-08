@@ -344,5 +344,28 @@ describe("notes, guides, and threads", () => {
         title: "Hold",
       }),
     );
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/wait"), {
+        email: "wait@example.com",
+        displayName: "Wait",
+        role: "team_lead",
+        signIn: "google",
+        active: true,
+        enabled: true,
+        awaitingGoogle: true,
+        otpVerified: false,
+        onShift: false,
+        protected: false,
+        passwordChangedAt: Timestamp.now(),
+        passwordExpiresAt: future(),
+      });
+    });
+    await assertSucceeds(
+      setDoc(doc(dbFor("pat"), "threads/direct_pat_wait"), {
+        ...thread,
+        participantIds: ["pat", "wait"],
+        title: "Wait",
+      }),
+    );
   });
 });

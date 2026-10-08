@@ -75,8 +75,7 @@ service cloud.firestore {
       let person = get(userPath(uid)).data;
       return exists(userPath(uid))
         && person.active == true
-        && (!('enabled' in person) || person.enabled == true)
-        && (!('awaitingGoogle' in person) || person.awaitingGoogle == false);
+        && (!('enabled' in person) || person.enabled == true);
     }
 
     function isTime(value) {

@@ -207,6 +207,7 @@ h2 { font-size: 1.25rem; }
 .card.mine { background: var(--mine); }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .list button { text-align: left; }
+button.person-choice { display: grid; justify-items: start; gap: 2px; }
 
 .field { display: grid; gap: 6px; font-weight: 700; }
 .hint, .meta, .empty { color: var(--muted); margin: 0; }

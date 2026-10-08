@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messagePreview as serverPreview } from "../functions/src/logic/messages";
+import { messagePreview as serverPreview, replaceParticipant } from "../functions/src/logic/messages";
 import { imageContentType, imageFileFromClipboard, imageObjectName, imageProblem, messagePreview } from "../src/media";
 
 function file(name: string, type: string, bytes = 8): File {
@@ -31,5 +31,9 @@ describe("care pictures", () => {
     expect(messagePreview("", false)).toBe("");
     expect(serverPreview("", true)).toBe(messagePreview("", true));
     expect(serverPreview("hello", false)).toBe(messagePreview("hello", false));
+  });
+
+  it("keeps a direct conversation when a Gmail employee gets their own sign-in", () => {
+    expect(replaceParticipant(["dad", "roster"], "roster", "google")).toEqual(["dad", "google"]);
   });
 });

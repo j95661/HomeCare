@@ -46,7 +46,7 @@ import {
 } from "./logic/schedule";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
 import { zonedParts } from "./logic/time";
-import { messagePreview } from "./logic/messages";
+import { messagePreview, replaceParticipant } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
 
@@ -494,11 +494,12 @@ export const acceptGoogleSignIn = onCall(callable, async (request) => {
 });
 
 async function migrateRosterRefs(fromUid: string, toUid: string): Promise<void> {
-  const [templates, exceptions, requested, accepted] = await Promise.all([
+  const [templates, exceptions, requested, accepted, threads] = await Promise.all([
     db.collection("shiftTemplates").where("userId", "==", fromUid).get(),
     db.collection("shiftExceptions").where("userId", "==", fromUid).get(),
     db.collection("shiftRequests").where("requesterId", "==", fromUid).get(),
     db.collection("shiftRequests").where("acceptedBy", "==", fromUid).get(),
+    db.collection("threads").where("participantIds", "array-contains", fromUid).get(),
   ]);
   const writes = new Map<string, Record<string, string>>();
   const put = (path: string, data: Record<string, string>) => {
@@ -512,6 +513,15 @@ async function migrateRosterRefs(fromUid: string, toUid: string): Promise<void> 
   for (let index = 0; index < entries.length; index += 400) {
     const batch = db.batch();
     for (const [path, data] of entries.slice(index, index + 400)) batch.update(db.doc(path), data);
+    await batch.commit();
+  }
+  for (let index = 0; index < threads.docs.length; index += 400) {
+    const batch = db.batch();
+    for (const item of threads.docs.slice(index, index + 400)) {
+      batch.update(item.ref, {
+        participantIds: replaceParticipant((item.get("participantIds") as string[]) || [], fromUid, toUid),
+      });
+    }
     await batch.commit();
   }
 }
