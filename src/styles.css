@@ -286,3 +286,21 @@ button.emoji {
   gap: 10px;
 }
 .composer { display: grid; gap: 8px; }
+.send-row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+}
+button.emoji-toggle {
+  width: 52px;
+  min-height: 52px;
+  padding: 0;
+  font-size: 1.45rem;
+  font-weight: 400;
+  line-height: 1;
+}
+.message-body {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

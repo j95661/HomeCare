@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   collection,
   doc,
@@ -12,7 +12,8 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { errorText, isPermissionDenied } from "../api";
-import { withEmoji } from "../emoji";
+import { EMOJI_CHOICES, withEmoji } from "../emoji";
+import { insertText } from "../messageText";
 import { Empty, Notice } from "../components";
 import { db } from "../firebase";
 import { useSession } from "../session";
@@ -37,6 +38,9 @@ export function MessagesScreen({ thread, go }: Props) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [picking, setPicking] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cursor = useRef({ start: 0, end: 0 });
 
   useEffect(() => {
     const unsubs = [
@@ -110,6 +114,28 @@ export function MessagesScreen({ thread, go }: Props) {
     }
     setPicking(false);
     go({ view: "messages", thread: id });
+  }
+
+  function rememberCursor() {
+    const field = inputRef.current;
+    if (!field) return;
+    cursor.current = {
+      start: field.selectionStart ?? text.length,
+      end: field.selectionEnd ?? text.length,
+    };
+  }
+
+  function insertEmoji(mark: string) {
+    const { start, end } = cursor.current;
+    const next = insertText(text, start, end, mark);
+    setText(next.value);
+    cursor.current = { start: next.cursor, end: next.cursor };
+    setEmojiOpen(false);
+    requestAnimationFrame(() => {
+      const field = inputRef.current;
+      field?.focus();
+      field?.setSelectionRange(next.cursor, next.cursor);
+    });
   }
 
   async function send() {
@@ -204,7 +230,7 @@ export function MessagesScreen({ thread, go }: Props) {
         {messages.map((message) => (
           <li key={message.id} className={message.senderId === session.uid ? "card mine" : "card"}>
             <strong>{withEmoji(message.senderName, people.find((person) => person.id === message.senderId)?.emoji)}</strong>
-            <p>{message.text}</p>
+            <p className="message-body">{message.text}</p>
             <p className="meta">{formatStamp(message.createdAt)}</p>
           </li>
         ))}
@@ -218,11 +244,57 @@ export function MessagesScreen({ thread, go }: Props) {
       >
         <label className="field">
           <span>Message</span>
-          <input value={text} onChange={(event) => setText(event.target.value)} maxLength={2000} />
+          <input
+            ref={inputRef}
+            data-testid="message-input"
+            value={text}
+            maxLength={2000}
+            enterKeyHint="send"
+            autoComplete="off"
+            onChange={(event) => {
+              setText(event.target.value);
+              cursor.current = {
+                start: event.target.selectionStart ?? event.target.value.length,
+                end: event.target.selectionEnd ?? event.target.value.length,
+              };
+            }}
+            onSelect={rememberCursor}
+            onKeyUp={rememberCursor}
+            onClick={rememberCursor}
+            onBlur={rememberCursor}
+          />
         </label>
-        <button type="submit" className="primary">
-          Send
-        </button>
+        {emojiOpen ? (
+          <div className="emoji-grid" data-testid="message-emoji-grid">
+            {EMOJI_CHOICES.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className="emoji"
+                data-testid="message-emoji-choice"
+                data-emoji={item}
+                onClick={() => insertEmoji(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="send-row">
+          <button
+            type="button"
+            className="emoji-toggle"
+            data-testid="message-emoji"
+            aria-label="Insert emoji"
+            aria-expanded={emojiOpen}
+            onClick={() => setEmojiOpen((open) => !open)}
+          >
+            🌸
+          </button>
+          <button type="submit" className="primary" data-testid="message-send">
+            Send
+          </button>
+        </div>
       </form>
       {error ? <Notice>{error}</Notice> : null}
     </div>
