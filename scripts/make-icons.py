@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw simple high-contrast HomeCare icons. No third-party packages."""
+"""Draw simple high-contrast HammondCare icons. No third-party packages."""
 
 import pathlib
 import struct
@@ -19,7 +19,7 @@ def png(size: int) -> bytes:
             abs(y - center) <= span and abs(x - center) <= arm
         ):
             return bytes((255, 255, 255, 255))
-        return bytes((12, 59, 46, 255))
+        return bytes((122, 41, 72, 255))
 
     raw = b"".join(b"\x00" + b"".join(pixel(x, y) for x in range(size)) for y in range(size))
     ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)

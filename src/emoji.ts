@@ -4,7 +4,7 @@ import { isPermissionDenied } from "./api";
 import { db } from "./firebase";
 import { useSession } from "./session";
 
-export const EMOJI_CHOICES = ["🌻", "🌿", "🌸", "🌙", "⭐", "☕", "🎵", "🦋", "🐧", "🦊", "🐻", "🍀", "🌊", "💛", "🧡", "📚"] as const;
+export const EMOJI_CHOICES = ["🌸", "💗", "🌷", "💐", "🎀", "🌺", "🌹", "💖", "🦋", "🌙", "✨", "🌻", "☕", "🎵", "💛", "📚"] as const;
 
 export function withEmoji(name: string, emoji?: string): string {
   const mark = (emoji ?? "").trim();

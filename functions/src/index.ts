@@ -22,7 +22,7 @@ import { OTP_TTL_MS, canSendOtp, checkOtpCode, hashOtp, normalizeOtp, type OtpCh
 import { assertTimezone, expiresAt, validatePassword } from "./logic/password";
 import { normalizeEmoji, withEmoji } from "./logic/emoji";
 import { isNewSignInMethod, needsPasswordChange, normalizeSignIn } from "./logic/signin";
-import { isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
+import { DEFAULT_COLOR_SCHEME, isColorScheme, normalizePersonalColorScheme } from "./logic/themes";
 import { isRole, type Role } from "./logic/roles";
 import { selectMedicationDispatches, type PendingSnooze, type ReminderMed, type ReminderUser } from "./logic/reminders";
 import { applyAcceptance, type ShiftRecord, type ShiftRequestRecord } from "./logic/shifts";
@@ -473,7 +473,7 @@ export const updateAppSettings = onCall(callable, async (request) => {
   const passwordMaxAgeDays = Number(body.passwordMaxAgeDays);
   const snoozeMinutes = Number(body.snoozeMinutes);
   const timezone = String(body.timezone ?? "");
-  const colorScheme = String(body.colorScheme ?? "forest");
+  const colorScheme = String(body.colorScheme ?? DEFAULT_COLOR_SCHEME);
   if (!Number.isInteger(passwordMaxAgeDays) || passwordMaxAgeDays < 1 || passwordMaxAgeDays > 730) {
     throw new HttpsError("invalid-argument", "Password interval must be a whole number of days from 1 to 730.");
   }

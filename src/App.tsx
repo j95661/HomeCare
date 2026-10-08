@@ -20,7 +20,7 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { MedsScreen } from "./screens/MedsScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { SessionProvider, type SessionValue } from "./session";
-import { applyTheme } from "./themes";
+import { applyTheme, resolveColorScheme } from "./themes";
 import type { Role, RouteState, Session, ViewName } from "./types";
 
 type Gate =
@@ -127,7 +127,7 @@ export function App() {
           timezone: state.timezone,
           snoozeMinutes: state.snoozeMinutes,
           passwordMaxAgeDays: state.passwordMaxAgeDays,
-          colorScheme: state.colorScheme || "forest",
+          colorScheme: resolveColorScheme(state.colorScheme || ""),
           personalColorScheme: state.personalColorScheme || "",
         },
       });
@@ -168,11 +168,11 @@ export function App() {
 
   useEffect(() => {
     if (gate.kind !== "app") {
-      applyTheme("forest");
+      applyTheme("rose");
       return;
     }
     return onSnapshot(doc(db, "settings/app"), (snap) => {
-      const team = String(snap.get("colorScheme") || "forest");
+      const team = resolveColorScheme(String(snap.get("colorScheme") || ""));
       setGate((current) =>
         current.kind === "app" && current.session.colorScheme !== team
           ? { kind: "app", session: { ...current.session, colorScheme: team } }
@@ -265,7 +265,7 @@ export function App() {
   return (
     <div className="app">
       <header className="top">
-        <strong>HammondCare</strong>
+        <strong className="brand">HammondCare</strong>
         {gate.kind === "app" ? (
           <span>
             {gate.session.emoji ? `${gate.session.emoji} ` : ""}

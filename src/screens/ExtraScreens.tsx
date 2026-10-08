@@ -17,7 +17,7 @@ import { enablePush } from "../push";
 import { isStandaloneDisplay, pushSubscribeBlock } from "../pwa";
 import { canDeleteActivities, canManageGuides, canReviewLogs, isSuperAdmin, roleLabel } from "../roles";
 import { EMOJI_CHOICES, useEmojiMap, withEmoji } from "../emoji";
-import { applyTheme, COLOR_SCHEMES } from "../themes";
+import { applyTheme, COLOR_SCHEMES, resolveColorScheme } from "../themes";
 import { useSession } from "../session";
 import { formatStamp } from "../time";
 import type { Activity, Guide, GuideStep, Invite, MedLog, Person, Role, RouteState } from "../types";
@@ -526,7 +526,7 @@ export function SettingsScreen() {
   const [days, setDays] = useState(String(session.passwordMaxAgeDays));
   const [timezone, setTimezone] = useState(session.timezone);
   const [snooze, setSnooze] = useState(String(session.snoozeMinutes));
-  const [scheme, setScheme] = useState(session.colorScheme || "forest");
+  const [scheme, setScheme] = useState(resolveColorScheme(session.colorScheme));
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -538,7 +538,7 @@ export function SettingsScreen() {
         setDays(String(snap.get("passwordMaxAgeDays") ?? session.passwordMaxAgeDays));
         setTimezone(String(snap.get("timezone") ?? session.timezone));
         setSnooze(String(snap.get("snoozeMinutes") ?? session.snoozeMinutes));
-        setScheme(String(snap.get("colorScheme") || session.colorScheme || "forest"));
+        setScheme(resolveColorScheme(String(snap.get("colorScheme") || session.colorScheme || "")));
         setEmail(String(snap.get("superAdminEmail") ?? ""));
       },
       (err) => setError(isPermissionDenied(err) ? "" : errorText(err)),
@@ -611,14 +611,14 @@ function SchemePicker() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || "Forest";
+  const teamLabel = COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.label || "Rose";
 
   useEffect(() => {
     setChoice(session.personalColorScheme || "team");
   }, [session.personalColorScheme]);
 
   useEffect(() => {
-    applyTheme(choice === "team" ? session.colorScheme || "forest" : choice);
+    applyTheme(choice === "team" ? resolveColorScheme(session.colorScheme) : choice);
   }, [choice, session.colorScheme]);
 
   async function save() {
@@ -650,7 +650,7 @@ function SchemePicker() {
             setSaved(false);
           }}
         >
-          <span className="swatch" style={{ background: COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.accent ?? "#0c3b2e" }} />
+          <span className="swatch" style={{ background: COLOR_SCHEMES.find((item) => item.id === session.colorScheme)?.accent ?? "#7a2948" }} />
           Team default ({teamLabel})
         </button>
         {COLOR_SCHEMES.map((item) => (
