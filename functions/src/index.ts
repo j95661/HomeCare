@@ -52,6 +52,7 @@ import {
   type CoverageKind,
 } from "./logic/schedule";
 import { adminReviewText, replyDeadline, shouldReturnUnanswered, unansweredReplyText } from "./logic/coverage";
+import { adminSignInCodeMessage, signInCodeNote } from "./logic/welcome";
 import {
   applyAcceptance,
   approveTimeOff,
@@ -195,7 +196,9 @@ export const changePassword = onCall(callable, async (request) => {
   return { updated: true };
 });
 
-async function issueSignInCode(uid: string, email: string): Promise<{ sent: true; devCode?: string }> {
+async function issueSignInCode(uid: string, email: string, reveal = false): Promise<{ sent: true; devCode?: string }> {
+  const canMail = Boolean(process.env.SMTP_HOST) || isEmulator();
+  if (!canMail && !reveal) throw new HttpsError("failed-precondition", adminSignInCodeMessage);
   const ref = db.doc(`private/otp/challenges/${uid}`);
   const existingSnap = await ref.get();
   const existing = existingSnap.exists ? (existingSnap.data() as OtpChallenge) : null;
@@ -212,8 +215,9 @@ async function issueSignInCode(uid: string, email: string): Promise<{ sent: true
     hourlyCount: gate.hourlyCount,
     windowStart: gate.windowStart,
   });
-  await sendOtpEmail(email, code);
-  return isEmulator() ? { sent: true, devCode: code } : { sent: true };
+  if (canMail) await sendOtpEmail(email, code);
+  if (isEmulator() || reveal) return { sent: true, devCode: code };
+  return { sent: true };
 }
 
 async function assertEmailFree(email: string): Promise<void> {
@@ -340,7 +344,6 @@ async function enableRosterAccount(uid: string, by: string): Promise<{ emailNote
   const signIn = snap.get("signIn") === "google" ? "google" : "email_otp";
   if (!isRole(role) || role === "super_admin") throw new HttpsError("failed-precondition", "That account has no role.");
   const welcome = await sendWelcomeEmail(email, displayName, signIn);
-  const emailNote = welcome === "skipped" ? gmailEnabledWithoutEmail() : "";
   if (signIn === "google") {
     try {
       await auth.deleteUser(uid);
@@ -358,7 +361,7 @@ async function enableRosterAccount(uid: string, by: string): Promise<{ emailNote
       createdBy: by,
       createdAt: FieldValue.serverTimestamp(),
     });
-    return { emailNote };
+    return { emailNote: welcome === "skipped" ? gmailEnabledWithoutEmail() : "" };
   }
   try {
     await auth.updateUser(uid, { disabled: false, displayName });
@@ -370,8 +373,29 @@ async function enableRosterAccount(uid: string, by: string): Promise<{ emailNote
     throw error;
   }
   await db.doc(`users/${uid}`).update({ enabled: true, awaitingGoogle: false });
-  return { emailNote };
+  if (welcome === "skipped" && snap.get("signIn") === "email_otp") {
+    const issued = await issueSignInCode(uid, email, true);
+    return { emailNote: signInCodeNote(issued.devCode || "", true) };
+  }
+  return { emailNote: "" };
 }
+
+export const createSignInCode = onCall(callable, async (request) => {
+  const caller = await requireReadyUser(requireAuth(request));
+  if (caller.role !== "super_admin" || !caller.protected) {
+    throw new HttpsError("permission-denied", "Only the super admin can create a sign-in code.");
+  }
+  const uid = String(asObject(request.data).uid ?? "");
+  if (!uid) throw new HttpsError("invalid-argument", "Choose a person.");
+  const person = await readProfile(uid);
+  if (!person.active) throw new HttpsError("failed-precondition", "This account has been revoked.");
+  if (person.signIn !== "email_otp") throw new HttpsError("failed-precondition", "Choose a person who signs in with an email code.");
+  if (!person.enabled) throw new HttpsError("failed-precondition", "Enable this person first.");
+  const record = await auth.getUser(uid);
+  if (record.disabled) throw new HttpsError("failed-precondition", "Enable this person first.");
+  const issued = await issueSignInCode(uid, person.email, true);
+  return { code: issued.devCode || "" };
+});
 
 export const enableUserAccount = onCall(callable, async (request) => {
   const caller = await requireReadyUser(requireAuth(request));

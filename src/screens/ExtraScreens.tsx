@@ -476,6 +476,20 @@ export function PeopleScreen() {
     }
   }
 
+  async function signInCode(uid: string) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await call<{ code: string }>("createSignInCode", { uid });
+      setNotice(`Sign-in code: ${result.code}. It expires in 10 minutes. They open HammondCare, choose Email code, and enter it.`);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removePerson(uid: string) {
     setBusy(true);
     setError("");
@@ -602,6 +616,7 @@ export function PeopleScreen() {
             onRevoke={() => void revoke(person.id)}
             onClearEmoji={() => void clearEmoji(person.id)}
             onEnable={() => void enable(person.id)}
+            onSignInCode={() => void signInCode(person.id)}
             onDelete={() => void removePerson(person.id)}
             onRemoveInvite={() => void removeInvite(person.email)}
           />
@@ -622,6 +637,7 @@ function PersonRow({
   onRevoke,
   onClearEmoji,
   onEnable,
+  onSignInCode,
   onDelete,
   onRemoveInvite,
 }: {
@@ -633,6 +649,7 @@ function PersonRow({
   onRevoke: () => void;
   onClearEmoji: () => void;
   onEnable: () => void;
+  onSignInCode: () => void;
   onDelete: () => void;
   onRemoveInvite: () => void;
 }) {
@@ -705,6 +722,11 @@ function PersonRow({
           Remove invite
         </button>
       ) : null}
+      {manageAccounts && person.active && person.signIn === "email_otp" && isAccountEnabled(person) ? (
+        <button type="button" data-testid="signin-code" disabled={busy} onClick={onSignInCode}>
+          Sign-in code
+        </button>
+      ) : null}
       {showClear ? (
         <button type="button" data-testid="clear-emoji" disabled={busy} onClick={onClearEmoji}>
           Clear emoji
@@ -724,7 +746,13 @@ function PersonRow({
               onChange={(event) => setEmail(event.target.value)}
             />
           </Field>
-          <p className="hint">They sign in with this address. A Gmail invite follows it until they join.</p>
+          <p className="hint">
+            {person.signIn === "google"
+              ? "They sign in with this address. A Gmail invite follows it until they join."
+              : person.signIn === "email_otp"
+                ? "They sign in with this address and an email code."
+                : "They sign in with this address."}
+          </p>
           <Field label="Mobile">
             <input
               data-testid="person-phone"

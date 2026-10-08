@@ -72,7 +72,7 @@ The live project is [hammondcare-ce36f](https://console.firebase.google.com/proj
 
 The web app is registered. Firestore is created in `nam5`. The public web config is in `.env.example`. Copy it to `.env.production` before a production build.
 
-Cloud Functions and Authentication on this project require the Blaze plan. Turn on email/password (for the super admin) and Google (for Gmail people). Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, and `SUPER_ADMIN_PASSWORD`. Email codes need SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) on the functions. Gmail sign-in does not use SMTP. Until those SMTP values are set, an email-code sign-in returns “Email is not configured on the server.” `HOMECARE_WEB_API_KEY` must match the web API key so password changes can check the current password. Firebase rejects environment names that start with `FIREBASE_`.
+Cloud Functions and Authentication on this project require the Blaze plan. Turn on email/password (for the super admin) and Google (for Gmail people). Set `OTP_PEPPER`, `SUPER_ADMIN_EMAIL`, and `SUPER_ADMIN_PASSWORD`. Email codes need SMTP variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) on the functions. Gmail sign-in does not use SMTP. Until those SMTP values are set, Enable shows the super admin a sign-in code to give that person. They choose Email code and enter it. `HOMECARE_WEB_API_KEY` must match the web API key so password changes can check the current password. Firebase rejects environment names that start with `FIREBASE_`.
 
 ```bash
 npx firebase login
