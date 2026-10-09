@@ -648,6 +648,8 @@ export function App() {
     setRoute(next);
   }
   goRef.current = go;
+  const shiftPerson = gate.kind === "app" ? (viewPerson ?? gate.session) : null;
+  const shiftMark = shiftPerson ? nameMark(shiftPerson.displayName, shiftPerson.emoji) : "";
 
   return (
     <div className="app" ref={appRef}>
@@ -677,7 +679,7 @@ export function App() {
               void toggleShift();
             }}
           >
-            {nameMark((viewPerson ?? gate.session).displayName, (viewPerson ?? gate.session).emoji)}{" "}
+            {shiftMark ? `${shiftMark} ` : null}
             {(viewPerson ?? gate.session).onShift ? "On shift" : "Off shift"}
           </button>
         ) : null}
