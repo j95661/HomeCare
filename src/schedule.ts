@@ -135,7 +135,18 @@ export function showBoardNotice(
   );
 }
 
-/** Care staff see open team requests. Admins see time off once it is waiting for them, plus accepted history. */
+/** The person who asked, and an admin, can cancel a coverage request that is still on the schedule. */
+export function canCancelCoverageRequest(
+  item: { status: string; requesterId: string },
+  role: string,
+  uid: string,
+): boolean {
+  if (item.status !== "pending" && item.status !== "awaiting_admin" && item.status !== "accepted") return false;
+  if (item.requesterId === uid) return true;
+  return role === "super_admin" || role === "admin";
+}
+
+/** Care staff see team requests. Admins see them too, so they can cancel one. */
 export function showCoverageRequest(
   item: { status: string; type: string; requesterId: string },
   role: string,
@@ -144,9 +155,7 @@ export function showCoverageRequest(
   if (item.status === "cancelled" || item.status === "declined") return false;
   if (item.requesterId === uid) return true;
   if (role === "team_lead" || role === "care_provider") return true;
-  if (role !== "super_admin" && role !== "admin") return false;
-  if (item.status === "accepted") return true;
-  return isAwayKind(item.type) && item.status === "awaiting_admin";
+  return role === "super_admin" || role === "admin";
 }
 
 export function coverageKind(value: unknown): CoverageKind | "" {

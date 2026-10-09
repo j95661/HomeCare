@@ -1487,16 +1487,50 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
   const caller = await coverageActor(request);
   const id = String(asObject(request.data).id ?? "");
   const current = await loadRequest(id);
-  if (current.status !== "pending" && current.status !== "awaiting_admin") {
+  if (current.status !== "pending" && current.status !== "awaiting_admin" && current.status !== "accepted") {
     throw new HttpsError("failed-precondition", "That request is no longer open.");
   }
-  await db.doc(`shiftRequests/${id}`).update({
-    status: "cancelled",
-    resolvedAt: FieldValue.serverTimestamp(),
-    history: [
-      ...current.history,
-      { action: "cancelled", uid: caller.uid, name: caller.displayName, at: new Date().toISOString() },
-    ],
+  const admin = caller.role === "super_admin" || caller.role === "admin";
+  if (current.requesterId !== caller.uid && !admin) {
+    throw new HttpsError("permission-denied", "Only the person who asked, or an admin, can cancel.");
+  }
+  await db.runTransaction(async (tx) => {
+    const requestRef = db.doc(`shiftRequests/${id}`);
+    const templateRef = current.templateId ? db.doc(`shiftTemplates/${current.templateId}`) : null;
+    const fresh = await tx.get(requestRef);
+    const templateSnap = templateRef ? await tx.get(templateRef) : null;
+    const exceptionSnap =
+      current.templateId && isIsoDate(current.shiftDate)
+        ? await tx.get(
+            db.collection("shiftExceptions").where("templateId", "==", current.templateId).where("date", "==", current.shiftDate),
+          )
+        : null;
+    const status = String(fresh.get("status") ?? "");
+    if (status !== "pending" && status !== "awaiting_admin" && status !== "accepted") {
+      throw new HttpsError("failed-precondition", "That request is no longer open.");
+    }
+    if (status === "accepted" && exceptionSnap) {
+      const templateUserId = templateSnap?.exists ? String(templateSnap.get("userId") ?? "") : "";
+      for (const item of exceptionSnap.docs) {
+        if (String(item.get("requestId") ?? "") !== id) continue;
+        if (!templateUserId || templateUserId === current.requesterId) tx.delete(item.ref);
+        else {
+          tx.update(item.ref, {
+            userId: current.requesterId,
+            userName: current.requesterName,
+            kind: "swap",
+            requestId: "",
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    }
+    const history = (fresh.get("history") as ShiftRequestRecord["history"]) || [];
+    tx.update(requestRef, {
+      status: "cancelled",
+      resolvedAt: FieldValue.serverTimestamp(),
+      history: [...history, { action: "cancelled", uid: caller.uid, name: caller.displayName, at: new Date().toISOString() }],
+    });
   });
   await announceCoverage(
     caller,

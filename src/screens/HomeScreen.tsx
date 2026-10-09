@@ -471,7 +471,7 @@ export function HomeScreen({ route, go }: Props) {
             ) : null}
             {boardNotice.kind === "coverage" &&
             (coverageRequest.status === "pending" || coverageRequest.status === "awaiting_admin") &&
-            (isCareStaff(session.role) || coverageRequest.requesterId === session.uid) ? (
+            coverageRequest.requesterId === session.uid ? (
               <button type="button" data-testid="notice-cancel" disabled={busy} onClick={() => void cancelNotice()}>
                 Cancel request
               </button>
