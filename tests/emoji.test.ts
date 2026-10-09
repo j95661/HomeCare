@@ -39,12 +39,13 @@ describe("employee emoji", () => {
     expect(insertText("a".repeat(2000), 2000, 2000, "🌸").value).toHaveLength(2000);
   });
 
-  it("shows the chosen emoji or a plain initial beside the name", () => {
+  it("shows a chosen emoji beside the name and leaves the letter for the calendar", () => {
     expect(withEmoji("Alex", "😊")).toBe("😊 Alex");
-    expect(withEmoji("Alex", "")).toBe("A Alex");
-    expect(withEmoji("Alex")).toBe("A Alex");
+    expect(withEmoji("Alex", "")).toBe("Alex");
+    expect(withEmoji("Alex")).toBe("Alex");
     expect(withEmoji("Alex", "🌻")).toBe("🌻 Alex");
-    expect(withEmoji("  ", "nope")).toBe("?");
+    expect(withEmoji("  ", "nope")).toBe("");
+    expect(clientWithEmoji("Sam", "")).toBe("Sam");
     expect(clientWithEmoji("Sam", "🦊")).toBe("🦊 Sam");
   });
 });

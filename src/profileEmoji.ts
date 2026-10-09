@@ -64,10 +64,10 @@ export function nameInitial(name: string): string {
   return letter ? letter[0].toLocaleUpperCase() : "?";
 }
 
-/** The mark shown beside a name: their chosen emoji, or a plain initial. */
-export function nameMark(name: string, emoji?: string): string {
+/** The emoji beside a name. A letter initial is only for the monthly calendar. */
+export function nameMark(_name: string, emoji?: string): string {
   const mark = (emoji ?? "").trim();
-  return isSingleEmoji(mark) ? mark : nameInitial(name);
+  return isSingleEmoji(mark) ? mark : "";
 }
 
 export function withEmoji(name: string, emoji?: string): string {
