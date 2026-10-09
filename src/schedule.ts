@@ -122,6 +122,19 @@ export function visibleCoverageRequests<T extends { status: string }>(requests: 
   return requests.filter((item) => item.status !== "cancelled");
 }
 
+/** A settled swap leaves Home Notice. Other notices stay until a newer one replaces them. */
+export function showBoardNotice(
+  notice: { kind: string; coverageType: string } | null,
+  requestStatus: string,
+): boolean {
+  if (!notice) return false;
+  return !(
+    notice.kind === "coverage" &&
+    notice.coverageType === "swap" &&
+    (requestStatus === "accepted" || requestStatus === "cancelled")
+  );
+}
+
 /** Care staff see open team requests. Admins see time off once it is waiting for them, plus accepted history. */
 export function showCoverageRequest(
   item: { status: string; type: string; requesterId: string },

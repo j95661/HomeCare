@@ -20,7 +20,7 @@ import { Empty, Field, Modal, Notice } from "../components";
 import { useSession } from "../session";
 import { VIEW_CHANGE } from "../viewAs";
 import { db } from "../firebase";
-import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, templateFromData, type ResolvedShift, type ShiftException, type ShiftTemplate } from "../schedule";
+import { exceptionFromData, exceptionLabel, isAwayKind, resolveDay, showBoardNotice, templateFromData, type ResolvedShift, type ShiftException, type ShiftTemplate } from "../schedule";
 import { messagePreview } from "../media";
 import { isShiftPeriod, PERIOD_HOURS, periodsForShifts, type ShiftPeriod } from "../shiftPeriod";
 import { isTodaysHandover } from "../handover";
@@ -255,7 +255,8 @@ export function HomeScreen({ route, go }: Props) {
     });
   }, [careNotice?.requestId]);
 
-  const noticeUnread = Boolean(careNotice && careNotice.id !== readNoticeId);
+  const boardNotice = showBoardNotice(careNotice, coverageRequest.status) ? careNotice : null;
+  const noticeUnread = Boolean(boardNotice && boardNotice.id !== readNoticeId);
 
   async function acceptNotice() {
     if (!careNotice?.requestId) return;
@@ -286,21 +287,21 @@ export function HomeScreen({ route, go }: Props) {
   }
 
   useEffect(() => {
-    if (careNotice && noticeUnread && noticeHide.current !== careNotice.id) setNoticeOpen(true);
-  }, [careNotice, noticeUnread]);
+    if (boardNotice && noticeUnread && noticeHide.current !== boardNotice.id) setNoticeOpen(true);
+  }, [boardNotice, noticeUnread]);
 
   async function toggleNotice() {
     if (session.viewingAs) {
-      if (noticeOpen && careNotice) noticeHide.current = careNotice.id;
+      if (noticeOpen && boardNotice) noticeHide.current = boardNotice.id;
       setNoticeOpen((open) => !open);
       return;
     }
-    if (noticeOpen && careNotice && noticeUnread) {
-      noticeHide.current = careNotice.id;
+    if (noticeOpen && boardNotice && noticeUnread) {
+      noticeHide.current = boardNotice.id;
       setNoticeOpen(false);
       try {
         await setDoc(doc(db, "groupThread/main/noticeReads", session.uid), {
-          noticeMessageId: careNotice.id,
+          noticeMessageId: boardNotice.id,
           readAt: serverTimestamp(),
         });
       } catch (err) {
@@ -448,27 +449,27 @@ export function HomeScreen({ route, go }: Props) {
           <span className="collapse-title">Notice</span>
           <span className="collapse-summary">
             <span className="notice-summary">
-              {careNotice ? messagePreview(careNotice.text, Boolean(careNotice.imagePath)) : "No notice."}
+              {boardNotice ? messagePreview(boardNotice.text, Boolean(boardNotice.imagePath)) : "No notice."}
             </span>
             <span aria-hidden="true">{noticeOpen ? "▾" : "▸"}</span>
           </span>
         </button>
-        {noticeOpen && careNotice ? (
+        {noticeOpen && boardNotice ? (
           <div className="collapse-body" data-testid="notice-body">
-            {careNotice.text ? <p className="message-body">{careNotice.text}</p> : null}
-            {careNotice.imagePath ? <CareImage path={careNotice.imagePath} /> : null}
+            {boardNotice.text ? <p className="message-body">{boardNotice.text}</p> : null}
+            {boardNotice.imagePath ? <CareImage path={boardNotice.imagePath} /> : null}
             <p className="meta">
-              {withEmoji(careNotice.senderName, emoji.get(careNotice.senderId))} · {formatStamp(careNotice.at)}
+              {withEmoji(boardNotice.senderName, emoji.get(boardNotice.senderId))} · {formatStamp(boardNotice.at)}
             </p>
-            {careNotice.kind === "coverage" &&
+            {boardNotice.kind === "coverage" &&
             coverageRequest.status === "pending" &&
             isCareStaff(session.role) &&
-            careNotice.senderId !== session.uid ? (
+            boardNotice.senderId !== session.uid ? (
               <button type="button" className="primary" data-testid="notice-accept" disabled={busy} onClick={() => void acceptNotice()}>
-                {careNotice.coverageType === "swap" ? "Accept swap" : "I can cover this"}
+                {boardNotice.coverageType === "swap" ? "Accept swap" : "I can cover this"}
               </button>
             ) : null}
-            {careNotice.kind === "coverage" &&
+            {boardNotice.kind === "coverage" &&
             (coverageRequest.status === "pending" || coverageRequest.status === "awaiting_admin") &&
             (isCareStaff(session.role) || coverageRequest.requesterId === session.uid) ? (
               <button type="button" data-testid="notice-cancel" disabled={busy} onClick={() => void cancelNotice()}>
@@ -477,7 +478,7 @@ export function HomeScreen({ route, go }: Props) {
             ) : null}
           </div>
         ) : null}
-        {noticeOpen && !careNotice ? <p className="empty">No notice.</p> : null}
+        {noticeOpen && !boardNotice ? <p className="empty">No notice.</p> : null}
       </section>
 
       <section className="panel attach" data-testid="handover" data-open={notesOpen ? "true" : "false"}>
