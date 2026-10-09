@@ -7,6 +7,7 @@ import { db } from "../firebase";
 import { canApproveTimeOff, canEditWeeklyPattern, canManageSchedule, isCareStaff } from "../roles";
 import { VIEW_CHANGE } from "../viewAs";
 import {
+  canCancelCoverageRequest,
   coverageRequestLabel,
   exceptionFromData,
   exceptionLabel,
@@ -179,18 +180,6 @@ export function CoverageScreen() {
     }
   }
 
-  async function makePattern(id: string) {
-    setBusy(true);
-    setError("");
-    try {
-      await call("makeWeeklyPattern", { id });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const canAssign = canManageSchedule(session.role);
 
   return (
@@ -293,7 +282,7 @@ export function CoverageScreen() {
                   {waitingLine(open)}
                 </p>
               ) : null}
-              {open ? (
+              {open && canCancelCoverageRequest(open, session.role, session.uid) ? (
                 <button type="button" data-testid="cancel-coverage-day" disabled={busy} onClick={() => void cancel(open.id)}>
                   Cancel request
                 </button>
@@ -343,13 +332,6 @@ export function CoverageScreen() {
                   : ""}
               </p>
               {manage && item.patternUpdated ? <p className="meta">This is the weekly pattern.</p> : null}
-              <ul className="history">
-                {(item.history ?? []).map((entry, index) => (
-                  <li key={`${entry.at}-${index}`}>
-                    {entry.action} by {withEmoji(entry.name, people.find((person) => person.id === entry.uid)?.emoji)} · {formatIso(entry.at)}
-                  </li>
-                ))}
-              </ul>
               {item.status === "pending" && item.requesterId !== session.uid && isCareStaff(session.role) ? (
                 <button
                   type="button"
@@ -366,16 +348,18 @@ export function CoverageScreen() {
                   Approve
                 </button>
               ) : null}
-              {item.status === "pending" || item.status === "awaiting_admin" ? (
+              {canCancelCoverageRequest(item, session.role, session.uid) ? (
                 <button type="button" data-testid="cancel-coverage" disabled={busy} onClick={() => void cancel(item.id)}>
                   Cancel request
                 </button>
               ) : null}
-              {manage && item.type === "swap" && item.status === "accepted" && item.templateId && !item.patternUpdated ? (
-                <button type="button" className="primary" data-testid="make-weekly-pattern" disabled={busy} onClick={() => void makePattern(item.id)}>
-                  Make this the new weekly pattern
-                </button>
-              ) : null}
+              <ul className="history">
+                {(item.history ?? []).map((entry, index) => (
+                  <li key={`${entry.at}-${index}`}>
+                    {entry.action} by {withEmoji(entry.name, people.find((person) => person.id === entry.uid)?.emoji)} · {formatIso(entry.at)}
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>

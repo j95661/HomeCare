@@ -8,7 +8,7 @@ import {
 } from "../functions/src/logic/coverage";
 import { adminRecipients } from "../functions/src/logic/reminders";
 import { coverageMessageText, coveragePinsNotice } from "../functions/src/logic/messages";
-import { showBoardNotice, showCoverageRequest } from "../src/schedule";
+import { canCancelCoverageRequest, showBoardNotice, showCoverageRequest } from "../src/schedule";
 
 describe("coverage reply window", () => {
   it("clamps the reply window and builds a deadline from it", () => {
@@ -66,7 +66,13 @@ describe("coverage reply window", () => {
     expect(adminRecipients(roster).map((user) => user.uid)).toEqual(["admin", "super"]);
     const pendingSwap = { status: "pending", type: "swap", requesterId: "alex" };
     expect(showCoverageRequest(pendingSwap, "care_provider", "sam")).toBe(true);
-    expect(showCoverageRequest(pendingSwap, "admin", "parent")).toBe(false);
+    expect(showCoverageRequest(pendingSwap, "admin", "parent")).toBe(true);
+    expect(canCancelCoverageRequest(pendingSwap, "care_provider", "alex")).toBe(true);
+    expect(canCancelCoverageRequest(pendingSwap, "care_provider", "sam")).toBe(false);
+    expect(canCancelCoverageRequest(pendingSwap, "admin", "parent")).toBe(true);
+    expect(canCancelCoverageRequest({ status: "accepted", type: "swap", requesterId: "alex" }, "care_provider", "alex")).toBe(true);
+    expect(canCancelCoverageRequest({ status: "accepted", type: "swap", requesterId: "alex" }, "team_lead", "lead")).toBe(false);
+    expect(canCancelCoverageRequest({ status: "cancelled", type: "swap", requesterId: "alex" }, "admin", "parent")).toBe(false);
     expect(showCoverageRequest({ status: "awaiting_admin", type: "day_off", requesterId: "alex" }, "admin", "parent")).toBe(true);
     expect(showCoverageRequest({ status: "accepted", type: "swap", requesterId: "alex" }, "super_admin", "dad")).toBe(true);
     expect(showCoverageRequest(pendingSwap, "admin", "alex")).toBe(true);
