@@ -293,7 +293,7 @@ export function CoverageScreen() {
                   {waitingLine(open)}
                 </p>
               ) : null}
-              {open && open.requesterId === session.uid ? (
+              {open ? (
                 <button type="button" data-testid="cancel-coverage-day" disabled={busy} onClick={() => void cancel(open.id)}>
                   Cancel request
                 </button>
@@ -366,7 +366,7 @@ export function CoverageScreen() {
                   Approve
                 </button>
               ) : null}
-              {(item.status === "pending" || item.status === "awaiting_admin") && item.requesterId === session.uid ? (
+              {item.status === "pending" || item.status === "awaiting_admin" ? (
                 <button type="button" data-testid="cancel-coverage" disabled={busy} onClick={() => void cancel(item.id)}>
                   Cancel request
                 </button>

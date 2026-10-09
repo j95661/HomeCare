@@ -1490,7 +1490,6 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
   if (current.status !== "pending" && current.status !== "awaiting_admin") {
     throw new HttpsError("failed-precondition", "That request is no longer open.");
   }
-  if (current.requesterId !== caller.uid) throw new HttpsError("permission-denied", "Only the requester can cancel.");
   await db.doc(`shiftRequests/${id}`).update({
     status: "cancelled",
     resolvedAt: FieldValue.serverTimestamp(),
