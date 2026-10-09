@@ -66,7 +66,7 @@ import {
 import { handoverNoteDay, shouldArchiveHandover } from "./logic/handover";
 import { zonedParts } from "./logic/time";
 import { deviceActedAt, isMedAction, normalizeActionId } from "./logic/medLog";
-import { coverageMessageText, coverageWhen, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
+import { coverageMessageText, coveragePinsNotice, coverageWhen, messagePreview, replaceParticipant, type CoverageNotice } from "./logic/messages";
 
 const callable = { invoker: "public" as const };
 
@@ -1490,7 +1490,6 @@ export const cancelShiftRequest = onCall(callable, async (request) => {
   if (current.status !== "pending" && current.status !== "awaiting_admin") {
     throw new HttpsError("failed-precondition", "That request is no longer open.");
   }
-  if (current.requesterId !== caller.uid) throw new HttpsError("permission-denied", "Only the requester can cancel.");
   await db.doc(`shiftRequests/${id}`).update({
     status: "cancelled",
     resolvedAt: FieldValue.serverTimestamp(),
@@ -1549,6 +1548,7 @@ async function announceCoverage(
   const parent = db.doc("groupThread/main");
   const existing = await parent.get();
   const ownsNotice = Boolean(requestId) && String(existing.get("noticeRequestId") ?? "") === requestId;
+  const pinsNotice = Boolean(requestId) && coveragePinsNotice(notice);
   const message = parent.collection("messages").doc();
   const thread: Record<string, unknown> = {
     type: "group",
@@ -1558,7 +1558,7 @@ async function announceCoverage(
     lastSenderId: sender.uid,
     lastSenderName: name,
   };
-  if (requestId && notice.action !== "cancelled") {
+  if (pinsNotice) {
     thread.noticeMessageId = message.id;
     thread.noticeText = text;
     thread.noticeSenderId = sender.uid;
@@ -1579,14 +1579,18 @@ async function announceCoverage(
     thread.noticeRequestId = "";
     thread.noticeCoverageType = "";
   }
+  const posted = requestId && !pinsNotice ? await parent.collection("messages").where("requestId", "==", requestId).get() : null;
   const batch = db.batch();
+  posted?.docs.forEach((item) => {
+    if (item.get("notice") === true) batch.update(item.ref, { notice: false });
+  });
   batch.set(message, {
     senderId: sender.uid,
     senderName: name,
     text,
     kind: "coverage",
     coverageType: notice.type,
-    notice: notice.action !== "cancelled",
+    notice: pinsNotice,
     requestId,
     reason: notice.reason || "",
     createdAt: FieldValue.serverTimestamp(),

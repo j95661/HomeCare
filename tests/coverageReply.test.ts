@@ -7,8 +7,8 @@ import {
   unansweredReplyText,
 } from "../functions/src/logic/coverage";
 import { adminRecipients } from "../functions/src/logic/reminders";
-import { coverageMessageText } from "../functions/src/logic/messages";
-import { showCoverageRequest } from "../src/schedule";
+import { coverageMessageText, coveragePinsNotice } from "../functions/src/logic/messages";
+import { showBoardNotice, showCoverageRequest } from "../src/schedule";
 
 describe("coverage reply window", () => {
   it("clamps the reply window and builds a deadline from it", () => {
@@ -70,5 +70,20 @@ describe("coverage reply window", () => {
     expect(showCoverageRequest({ status: "awaiting_admin", type: "day_off", requesterId: "alex" }, "admin", "parent")).toBe(true);
     expect(showCoverageRequest({ status: "accepted", type: "swap", requesterId: "alex" }, "super_admin", "dad")).toBe(true);
     expect(showCoverageRequest(pendingSwap, "admin", "alex")).toBe(true);
+  });
+
+  it("pulls an accepted or cancelled swap off the notice board", () => {
+    const when = { date: "2026-10-08", start: "08:00", end: "16:00" };
+    expect(coveragePinsNotice({ action: "requested", type: "swap", ...when })).toBe(true);
+    expect(coveragePinsNotice({ action: "accepted", type: "swap", ...when })).toBe(false);
+    expect(coveragePinsNotice({ action: "cancelled", type: "swap", ...when })).toBe(false);
+    expect(coveragePinsNotice({ action: "accepted", type: "day_off", ...when })).toBe(true);
+    expect(coveragePinsNotice({ action: "cancelled", type: "sick_leave", ...when })).toBe(false);
+    expect(showBoardNotice({ kind: "coverage", coverageType: "swap" }, "pending")).toBe(true);
+    expect(showBoardNotice({ kind: "coverage", coverageType: "swap" }, "accepted")).toBe(false);
+    expect(showBoardNotice({ kind: "coverage", coverageType: "swap" }, "cancelled")).toBe(false);
+    expect(showBoardNotice({ kind: "coverage", coverageType: "day_off" }, "accepted")).toBe(true);
+    expect(showBoardNotice({ kind: "notice", coverageType: "" }, "")).toBe(true);
+    expect(showBoardNotice(null, "accepted")).toBe(false);
   });
 });

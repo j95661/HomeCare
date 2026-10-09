@@ -55,6 +55,12 @@ function coverageReason(notice: CoverageNotice): string {
   return reason ? ` Reason: ${reason}` : "";
 }
 
+/** An accepted or cancelled swap leaves the notice board. A cancellation always leaves it. */
+export function coveragePinsNotice(notice: CoverageNotice): boolean {
+  if (notice.action === "cancelled") return false;
+  return !(notice.type === "swap" && notice.action === "accepted");
+}
+
 /** Care-team text for a shift swap, time off, or sick leave. */
 export function coverageMessageText(notice: CoverageNotice): string {
   const when = `${formatDay(notice.date)}, ${formatClock(notice.start)}–${formatClock(notice.end)}`;
