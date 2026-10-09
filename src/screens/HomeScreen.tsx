@@ -57,7 +57,7 @@ export function HomeScreen({ route, go }: Props) {
     requestId: string;
     coverageType: string;
   } | null>(null);
-  const [coverageStatus, setCoverageStatus] = useState("");
+  const [coverageRequest, setCoverageRequest] = useState({ status: "", requesterId: "" });
   const [roster, setRoster] = useState<{ id: string; displayName: string }[]>([]);
   const [dayAssignee, setDayAssignee] = useState<Record<string, string>>({});
   const [readNoticeId, setReadNoticeId] = useState("");
@@ -243,11 +243,15 @@ export function HomeScreen({ route, go }: Props) {
 
   useEffect(() => {
     if (!careNotice?.requestId) {
-      setCoverageStatus("");
+      setCoverageRequest({ status: "", requesterId: "" });
       return;
     }
     return onSnapshot(doc(db, "shiftRequests", careNotice.requestId), (snap) => {
-      setCoverageStatus(snap.exists() ? String(snap.get("status") || "") : "");
+      setCoverageRequest(
+        snap.exists()
+          ? { status: String(snap.get("status") || ""), requesterId: String(snap.get("requesterId") || "") }
+          : { status: "", requesterId: "" },
+      );
     });
   }, [careNotice?.requestId]);
 
@@ -259,6 +263,20 @@ export function HomeScreen({ route, go }: Props) {
     setError("");
     try {
       await call("acceptShiftRequest", { id: careNotice.requestId });
+    } catch (err) {
+      if (isPermissionDenied(err)) session.onDenied();
+      else setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelNotice() {
+    if (!careNotice?.requestId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await call("cancelShiftRequest", { id: careNotice.requestId });
     } catch (err) {
       if (isPermissionDenied(err)) session.onDenied();
       else setError(errorText(err));
@@ -443,11 +461,18 @@ export function HomeScreen({ route, go }: Props) {
               {withEmoji(careNotice.senderName, emoji.get(careNotice.senderId))} · {formatStamp(careNotice.at)}
             </p>
             {careNotice.kind === "coverage" &&
-            coverageStatus === "pending" &&
+            coverageRequest.status === "pending" &&
             isCareStaff(session.role) &&
             careNotice.senderId !== session.uid ? (
               <button type="button" className="primary" data-testid="notice-accept" disabled={busy} onClick={() => void acceptNotice()}>
                 {careNotice.coverageType === "swap" ? "Accept swap" : "I can cover this"}
+              </button>
+            ) : null}
+            {careNotice.kind === "coverage" &&
+            (coverageRequest.status === "pending" || coverageRequest.status === "awaiting_admin") &&
+            coverageRequest.requesterId === session.uid ? (
+              <button type="button" data-testid="notice-cancel" disabled={busy} onClick={() => void cancelNotice()}>
+                Cancel request
               </button>
             ) : null}
           </div>

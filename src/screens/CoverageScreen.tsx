@@ -293,6 +293,11 @@ export function CoverageScreen() {
                   {waitingLine(open)}
                 </p>
               ) : null}
+              {open && open.requesterId === session.uid ? (
+                <button type="button" data-testid="cancel-coverage-day" disabled={busy} onClick={() => void cancel(open.id)}>
+                  Cancel request
+                </button>
+              ) : null}
               <div className="stack">
                 <button type="button" data-testid="request-swap" disabled={busy || Boolean(open)} onClick={() => openRequest(shift, "swap")}>
                   Swap
